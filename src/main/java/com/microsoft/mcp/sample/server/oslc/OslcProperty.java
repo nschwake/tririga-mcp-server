@@ -1,7 +1,13 @@
 package com.microsoft.mcp.sample.server.oslc;
 
+import java.util.Map;
+
 /**
  * Represents a single property parsed from an OSLC ResourceShape.
+ *
+ * prefixedName(prefixMap) returns the correct "prefix:localName" JSON key
+ * that TRIRIGA expects in POST/PUT bodies, e.g. "spi:triTaskTypeCL",
+ * "dcterms:title", "spi_wm:schedstart".
  */
 public class OslcProperty {
 
@@ -36,6 +42,8 @@ public class OslcProperty {
         this.defaultValue = defaultValue;
     }
 
+    // ── Type helpers ─────────────────────────────────────────────────────────
+
     public boolean isLiteral() {
         if (valueType == null) return true;
         return !valueType.equals(TYPE_RESOURCE)
@@ -43,9 +51,43 @@ public class OslcProperty {
             && !valueType.equals(TYPE_LOCAL_RESOURCE);
     }
 
-    public boolean isResourceLink() { return !isLiteral(); }
-
+    public boolean isResourceLink()         { return !isLiteral(); }
     public boolean isWritableResourceLink() { return isResourceLink() && !readOnly; }
+
+    // ── Key generation ───────────────────────────────────────────────────────
+
+    /**
+     * Returns the prefixed JSON key for this property as TRIRIGA expects it,
+     * e.g. "spi:triTaskTypeCL", "dcterms:title", "spi_wm:schedstart".
+     *
+     * Resolution order:
+     *   1. Caller-supplied prefixMap (from the service provider's oslc:prefixDefinitions)
+     *   2. Built-in well-known prefixes (dcterms, oslc, rdf)
+     *   3. Falls back to bare oslc:name if nothing matches
+     */
+    public String prefixedName(Map<String, String> prefixMap) {
+        if (propertyDefinition == null) return name;
+
+        if (prefixMap != null) {
+            for (Map.Entry<String, String> ns : prefixMap.entrySet()) {
+                if (propertyDefinition.startsWith(ns.getValue())) {
+                    return ns.getKey() + ":" + propertyDefinition.substring(ns.getValue().length());
+                }
+            }
+        }
+
+        // Built-in fallbacks always present
+        if (propertyDefinition.startsWith("http://purl.org/dc/terms/"))
+            return "dcterms:" + propertyDefinition.substring("http://purl.org/dc/terms/".length());
+        if (propertyDefinition.startsWith("http://open-services.net/ns/core#"))
+            return "oslc:" + propertyDefinition.substring("http://open-services.net/ns/core#".length());
+        if (propertyDefinition.startsWith("http://www.w3.org/1999/02/22-rdf-syntax-ns#"))
+            return "rdf:" + propertyDefinition.substring("http://www.w3.org/1999/02/22-rdf-syntax-ns#".length());
+
+        return name; // bare name as last resort
+    }
+
+    // ── Accessors ─────────────────────────────────────────────────────────────
 
     public String getName()               { return name; }
     public String getPropertyDefinition() { return propertyDefinition; }

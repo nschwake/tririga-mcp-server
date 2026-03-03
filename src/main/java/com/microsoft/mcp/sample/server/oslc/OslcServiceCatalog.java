@@ -36,6 +36,13 @@ public class OslcServiceCatalog {
     // ── Track which shapes have a query capability (shapeUrl → queryUrl) ─────
     private final Map<String, String> queryUrls = new HashMap<>();
 
+    /**
+     * Prefix map accumulated across ALL service providers.
+     * prefix → namespace URI, e.g. "spi" → "http://jazz.net/ns/ism/smarter_physical_infrastructure#"
+     * Used by OslcShape.parse() so property keys render as "spi:triTaskTypeCL" not bare names.
+     */
+    private final Map<String, String> globalPrefixMap = new LinkedHashMap<>();
+
     private boolean built = false;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -59,6 +66,7 @@ public class OslcServiceCatalog {
         index.clear();
         creationUrls.clear();
         queryUrls.clear();
+        globalPrefixMap.clear();
 
         // 1. Fetch the top-level service provider catalog
         String catalogXml = fetcher.fetch(catalogUrl);
@@ -103,6 +111,19 @@ public class OslcServiceCatalog {
 
     /** Returns true if the catalog has been built at least once. */
     public boolean isBuilt() { return built; }
+
+    /**
+     * Returns the accumulated namespace prefix map from all service providers.
+     * e.g. {"spi" -> "http://jazz.net/ns/ism/smarter_physical_infrastructure#",
+     *        "spi_wm" -> "http://jazz.net/ns/ism/smarter_physical_infrastructure/work#",
+     *        "dcterms" -> "http://purl.org/dc/terms/", ...}
+     *
+     * Pass this to OslcShape.parse(url, xml, catalog.getGlobalPrefixMap()) so that
+     * OslcProperty.prefixedName() generates correct "prefix:localName" JSON keys.
+     */
+    public Map<String, String> getGlobalPrefixMap() {
+        return Collections.unmodifiableMap(globalPrefixMap);
+    }
 
     /** Invalidate the catalog so it will be rebuilt on next use. */
     public synchronized void invalidate() { built = false; }
@@ -176,8 +197,17 @@ public class OslcServiceCatalog {
         // Service provider title
         String spTitle = firstText(doc, NS_DCTERMS, "title");
         if (spTitle == null) spTitle = "Unknown Provider";
-
         final String finalTitle = spTitle;
+        // ── Extract oslc:prefixDefinition entries into globalPrefixMap ─────────
+        NodeList prefixDefs = doc.getElementsByTagNameNS(NS_OSLC, "PrefixDefinition");
+        for (int i = 0; i < prefixDefs.getLength(); i++) {
+            Element pd = (Element) prefixDefs.item(i);
+            String prefix = childText(pd, NS_OSLC, "prefix");
+            String base   = childAttr(pd, NS_OSLC, "prefixBase", NS_RDF, "resource");
+            if (prefix != null && !prefix.isBlank() && base != null && !base.isBlank()) {
+                globalPrefixMap.putIfAbsent(prefix, base);
+            }
+        }
 
         // ── Query capabilities ────────────────────────────────────────────────
         NodeList qcNodes = doc.getElementsByTagNameNS(NS_OSLC, "QueryCapability");

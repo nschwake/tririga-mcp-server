@@ -2,6 +2,8 @@ package com.microsoft.mcp.sample.server.service;
 
 import com.microsoft.mcp.sample.server.oslc.OslcCreateResult;
 import com.microsoft.mcp.sample.server.oslc.OslcJsonBuilder;
+import com.microsoft.mcp.sample.server.oslc.OslcJsonBuilder.InlineChild;
+import com.microsoft.mcp.sample.server.oslc.OslcJsonBuilder.ExistingRecord;
 import com.microsoft.mcp.sample.server.oslc.OslcProperty;
 import com.microsoft.mcp.sample.server.oslc.OslcServiceCatalog;
 import com.microsoft.mcp.sample.server.oslc.OslcShapeEntry;
@@ -26,15 +28,13 @@ import java.util.stream.Collectors;
 @Service
 public class TririgaOSLCService {
 
-    // ─── Well-known shape paths ───────────────────────────────────────────────
+    // ─── Shape paths ─────────────────────────────────────────────────────────
     private static final String SHAPE_WORK_TASK = "/oslc/shapes/triWorkTaskRS";
-    private static final String SHAPE_ASSET     = "/oslc/shapes/triAssetRS";
-    private static final String SHAPE_LOCATION  = "/oslc/shapes/triLocationRS";
 
-    // ─── Shape cache ─────────────────────────────────────────────────────────
+    // ─── Shape cache (URL → parsed OslcShape) ────────────────────────────────
     private final ConcurrentHashMap<String, OslcShape> shapeCache = new ConcurrentHashMap<>();
 
-    // ─── Service catalog (shape index built from all service providers) ──────
+    // ─── Service catalog (findShape tool) ────────────────────────────────────
     private final OslcServiceCatalog catalog = new OslcServiceCatalog();
 
     // ─── Transaction ID counter ──────────────────────────────────────────────
@@ -43,25 +43,17 @@ public class TririgaOSLCService {
     // ─────────────────────────────────────────────────────────────────────────
     //  TRIRIGA URL conventions
     //
-    //  Every TRIRIGA OSLC resource follows a consistent naming pattern based
-    //  on the resource name (e.g. "triWorkTask", "cstCustomExample"):
-    //
-    //    Shape:        /oslc/shapes/{name}RS
-    //    Query:        /oslc/spq/{name}QC
-    //    Creation:     /oslc/so/{name}CF
-    //    Read/Update:  /oslc/so/{name}RS/{id}
-    //    Delete:       /oslc/so/{name}RS/{id}  (HTTP DELETE)
-    //
-    //  The generic tools below use these patterns so they work with ANY resource
-    //  — built-in or custom — without requiring new Java code.
+    //  Shape:        /oslc/shapes/{name}RS
+    //  Query:        /oslc/spq/{name}QC
+    //  Create:       /oslc/so/{name}CF
+    //  Read/Update:  /oslc/so/{name}RS/{id}
+    //  Delete:       /oslc/so/{name}RS/{id}  (HTTP DELETE)
     // ─────────────────────────────────────────────────────────────────────────
 
-    private String shapeUrl(String resourceName)    { return tririgaUrl() + "/oslc/shapes/" + resourceName + "RS"; }
-    private String queryUrl(String resourceName)    { return tririgaUrl() + "/oslc/spq/"   + resourceName + "QC"; }
-    private String createUrl(String resourceName)   { return tririgaUrl() + "/oslc/so/"    + resourceName + "CF"; }
-    private String recordUrl(String resourceName, String id) {
-        return tririgaUrl() + "/oslc/so/" + resourceName + "RS/" + id;
-    }
+    private String shapeUrl(String n)              { return tririgaUrl() + "/oslc/shapes/" + n + "RS"; }
+    private String queryUrl(String n)              { return tririgaUrl() + "/oslc/spq/"   + n + "QC"; }
+    private String createUrl(String n)             { return tririgaUrl() + "/oslc/so/"    + n + "CF"; }
+    private String recordUrl(String n, String id)  { return tririgaUrl() + "/oslc/so/"    + n + "RS/" + id; }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  HTTP helpers
@@ -132,7 +124,7 @@ public class TririgaOSLCService {
         try {
             HttpResponse<String> r = HttpClient.newHttpClient()
                     .send(req, HttpResponse.BodyHandlers.ofString());
-            return r.statusCode() == 200 || r.statusCode() == 204
+            return (r.statusCode() == 200 || r.statusCode() == 204)
                     ? "Deleted successfully (HTTP " + r.statusCode() + ")."
                     : "Delete failed (HTTP " + r.statusCode() + "): " + r.body();
         } catch (IOException | InterruptedException e) { return "Error: " + e.getMessage(); }
@@ -142,13 +134,17 @@ public class TririgaOSLCService {
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Shape loading & caching
+    //  Shapes are always parsed with the global prefix map from the catalog
+    //  so that OslcProperty.prefixedName() returns correct "prefix:localName" keys.
     // ─────────────────────────────────────────────────────────────────────────
 
     private OslcShape loadShape(String shapePath) {
         String fullUrl = tririgaUrl() + shapePath;
         return shapeCache.computeIfAbsent(fullUrl, url -> {
-            try { return OslcShape.parse(url, get(url)); }
-            catch (Exception e) {
+            try {
+                ensureCatalog();
+                return OslcShape.parse(url, get(url), catalog.getGlobalPrefixMap());
+            } catch (Exception e) {
                 throw new RuntimeException("Failed to load shape " + url + ": " + e.getMessage(), e);
             }
         });
@@ -159,19 +155,32 @@ public class TririgaOSLCService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  Catalog helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void ensureCatalog() {
+        if (!catalog.isBuilt()) {
+            try { catalog.build(tririgaUrl() + "/oslc/sp", this::get); }
+            catch (Exception e) {
+                throw new RuntimeException("Failed to build shape catalog: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  Shape tools
     // ─────────────────────────────────────────────────────────────────────────
 
     @Tool(description =
-        "Describe the writable fields for any TRIRIGA resource — built-in or custom. "
-        + "Shows writable literal fields (plain values) and writable resource-link fields "
-        + "(fields requiring a full TRIRIGA resource URL). "
-        + "Example paths: '/oslc/shapes/triWorkTaskRS', '/oslc/shapes/cstCustomExampleRS'. "
-        + "Call this before any create or update operation to discover available fields.")
+        "Describe the writable fields for any TRIRIGA resource. " +
+        "Shows writable literal fields (plain values) and writable resource-link fields. " +
+        "Also shows the correct JSON key (prefix:localName) for each field as TRIRIGA expects it. " +
+        "Example paths: '/oslc/shapes/triWorkTaskRS', '/oslc/shapes/cstCustomExampleRS'.")
     public String describeShape(
-            @ToolParam(description = "Shape path, e.g. '/oslc/shapes/triWorkTaskRS' or '/oslc/shapes/cstCustomExampleRS'") String shapePath) {
+            @ToolParam(description = "Shape path, e.g. '/oslc/shapes/triWorkTaskRS'") String shapePath) {
         try {
             OslcShape shape = loadShape(shapePath);
+            Map<String, String> pm = shape.getPrefixMap();
             StringBuilder sb = new StringBuilder();
             sb.append("Shape: ").append(shape.getTitle()).append("\n");
             sb.append("Describes: ").append(shape.getDescribesType()).append("\n\n");
@@ -179,32 +188,30 @@ public class TririgaOSLCService {
             List<OslcProperty> literals = shape.getWritableLiteralProperties();
             sb.append("── Writable literal fields (").append(literals.size()).append(") ──\n");
             for (OslcProperty p : literals) {
-                sb.append("  ").append(p.getName());
-                if (p.isRequired()) sb.append(" [REQUIRED]");
-                if (p.getDefaultValue() != null) sb.append(" (default: ").append(p.getDefaultValue()).append(")");
+                sb.append("  ").append(p.getName())
+                  .append("  →  JSON key: \"").append(p.prefixedName(pm)).append("\"");
+                if (p.isRequired()) sb.append("  [REQUIRED]");
+                if (p.getDefaultValue() != null) sb.append("  (default: ").append(p.getDefaultValue()).append(")");
                 sb.append("\n    type: ").append(shortType(p.getValueType())).append("\n");
             }
 
             List<OslcProperty> links = shape.getWritableResourceLinkProperties();
-            sb.append("\n── Writable resource-link fields (").append(links.size())
-              .append(") — supply as full TRIRIGA resource URLs ──\n");
+            sb.append("\n── Writable resource-link fields (").append(links.size()).append(") ──\n");
             for (OslcProperty p : links) {
-                sb.append("  ").append(p.getName());
-                if (p.isRequired()) sb.append(" [REQUIRED]");
+                sb.append("  ").append(p.getName())
+                  .append("  →  JSON key: \"").append(p.prefixedName(pm)).append("\"");
+                if (p.isRequired()) sb.append("  [REQUIRED]");
                 sb.append("\n    valueShape: ")
                   .append(p.getValueShapeUrl() != null ? p.getValueShapeUrl() : "(none)").append("\n");
             }
-
-            long roCount = shape.getAllProperties().values().stream()
-                    .filter(OslcProperty::isReadOnly).count();
+            long roCount = shape.getAllProperties().values().stream().filter(OslcProperty::isReadOnly).count();
             sb.append("\nTotal: ").append(shape.getAllProperties().size())
               .append(" properties (").append(roCount).append(" read-only, skipped).");
             return sb.toString();
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
 
-    @Tool(description = "Force a reload of a cached resource shape from TRIRIGA. "
-            + "Use after a custom shape has been modified in the TRIRIGA admin console.")
+    @Tool(description = "Force a reload of a cached resource shape from TRIRIGA.")
     public String refreshShape(
             @ToolParam(description = "Shape path, e.g. '/oslc/shapes/triWorkTaskRS'") String shapePath) {
         shapeCache.remove(tririgaUrl() + shapePath);
@@ -217,78 +224,124 @@ public class TririgaOSLCService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  ★ GENERIC CRUD TOOLS
-    //
-    //  These five tools work with ANY TRIRIGA OSLC resource — built-in or
-    //  custom — by deriving all URLs from the resource name alone.
-    //  No new Java code is needed when a new resource shape is added to TRIRIGA.
+    //  ★ FIND SHAPE TOOL
     // ─────────────────────────────────────────────────────────────────────────
 
     @Tool(description =
-        "Discover a TRIRIGA OSLC resource by name. "
-        + "Fetches the resource shape, derives all CRUD URLs, and returns a full summary "
-        + "of the resource including writable fields and the URLs needed to query, create, "
-        + "read, update, and delete records. "
-        + "Use this first when working with any resource — built-in or custom. "
-        + "Example resource names: 'triWorkTask', 'triAsset', 'triLocation', 'cstCustomExample'.")
+        "Find the correct TRIRIGA OSLC resource shape for a natural language description. " +
+        "Use this when you are unsure which resourceName to use — e.g. 'person', 'people', " +
+        "'work order', 'room', 'building', 'reservation', 'security group', etc. " +
+        "Searches all registered shapes by title, resource type, and name. " +
+        "Pass '*' or blank to list ALL available shapes. " +
+        "Call refreshCatalog() after new custom shapes are added to TRIRIGA.")
+    public String findShape(
+            @ToolParam(description = "Keywords, e.g. 'person', 'work order', 'floor'. Use '*' to list all.") String keywords) {
+        try {
+            ensureCatalog();
+            boolean listAll = keywords == null || keywords.isBlank() || keywords.equals("*");
+            List<OslcShapeEntry> results = listAll
+                    ? new ArrayList<>(catalog.all()) : catalog.search(keywords);
+
+            if (results.isEmpty()) {
+                return "No shapes found matching \"" + keywords + "\". " +
+                       "Try broader terms or findShape('*') to list all " + catalog.size() + " shapes.";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(listAll
+                    ? "All TRIRIGA OSLC resource shapes (" + catalog.size() + " total):\n\n"
+                    : "Shapes matching \"" + keywords + "\" — " + results.size() + " result(s):\n\n");
+
+            Map<String, List<OslcShapeEntry>> byProvider = new LinkedHashMap<>();
+            for (OslcShapeEntry e : results)
+                byProvider.computeIfAbsent(e.getServiceProviderTitle(), k -> new ArrayList<>()).add(e);
+
+            for (Map.Entry<String, List<OslcShapeEntry>> group : byProvider.entrySet()) {
+                sb.append("── ").append(group.getKey()).append(" ──\n");
+                for (OslcShapeEntry e : group.getValue())
+                    sb.append(e.toSummaryLine()).append("\n\n");
+            }
+            sb.append("─────────────────────────────────────────────\n");
+            sb.append("Next: call discoverResource(resourceName) for full field details.");
+            return sb.toString();
+        } catch (Exception e) { return "Error searching shapes: " + e.getMessage(); }
+    }
+
+    @Tool(description =
+        "Refresh the TRIRIGA shape catalog by re-crawling all service providers. " +
+        "Also clears all cached resource shapes. Use after new custom shapes are added to TRIRIGA.")
+    public String refreshCatalog() {
+        catalog.invalidate();
+        shapeCache.clear();
+        try {
+            ensureCatalog();
+            return "Catalog refreshed: " + catalog.size() + " shapes indexed.";
+        } catch (Exception e) { return "Error: " + e.getMessage(); }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  ★ GENERIC CRUD TOOLS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Tool(description =
+        "Discover a TRIRIGA OSLC resource by name. Returns shape title, all CRUD URLs, " +
+        "and all writable fields with their correct JSON keys. " +
+        "Use this first when working with any resource — built-in or custom. " +
+        "Example resource names: 'triWorkTask', 'triAsset', 'triLocation', 'cstCustomExample'.")
     public String discoverResource(
-            @ToolParam(description = "Resource name without the 'RS' suffix, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName) {
+            @ToolParam(description = "Resource name without 'RS' suffix, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName) {
         try {
             OslcShape shape = loadShapeByName(resourceName);
-
+            Map<String, String> pm = shape.getPrefixMap();
             StringBuilder sb = new StringBuilder();
             sb.append("Resource: ").append(resourceName).append("\n");
             sb.append("Shape title: ").append(shape.getTitle()).append("\n");
             sb.append("Describes type: ").append(shape.getDescribesType()).append("\n\n");
-
             sb.append("── CRUD URLs ──\n");
-            sb.append("  Query (search):  ").append(queryUrl(resourceName)).append("\n");
-            sb.append("  Create (POST):   ").append(createUrl(resourceName)).append("\n");
-            sb.append("  Read/Update:     ").append(recordUrl(resourceName, "{id}")).append("\n");
-            sb.append("  Delete:          ").append(recordUrl(resourceName, "{id}")).append(" (HTTP DELETE)\n\n");
+            sb.append("  Query:   ").append(queryUrl(resourceName)).append("\n");
+            sb.append("  Create:  ").append(createUrl(resourceName)).append("\n");
+            sb.append("  Read:    ").append(recordUrl(resourceName, "{id}")).append("\n");
+            sb.append("  Update:  ").append(recordUrl(resourceName, "{id}")).append(" (PUT)\n");
+            sb.append("  Delete:  ").append(recordUrl(resourceName, "{id}")).append(" (DELETE)\n\n");
 
             List<OslcProperty> literals = shape.getWritableLiteralProperties();
             sb.append("── Writable literal fields (").append(literals.size()).append(") ──\n");
             for (OslcProperty p : literals) {
-                sb.append("  ").append(p.getName());
-                if (p.isRequired()) sb.append(" [REQUIRED]");
-                if (p.getDefaultValue() != null) sb.append(" (default: ").append(p.getDefaultValue()).append(")");
+                sb.append("  ").append(p.getName())
+                  .append("  →  JSON key: \"").append(p.prefixedName(pm)).append("\"");
+                if (p.isRequired()) sb.append("  [REQUIRED]");
+                if (p.getDefaultValue() != null) sb.append("  (default: ").append(p.getDefaultValue()).append(")");
                 sb.append("\n    type: ").append(shortType(p.getValueType())).append("\n");
             }
 
             List<OslcProperty> links = shape.getWritableResourceLinkProperties();
             sb.append("\n── Writable resource-link fields (").append(links.size()).append(") ──\n");
             for (OslcProperty p : links) {
-                sb.append("  ").append(p.getName());
-                if (p.isRequired()) sb.append(" [REQUIRED]");
+                sb.append("  ").append(p.getName())
+                  .append("  →  JSON key: \"").append(p.prefixedName(pm)).append("\"");
+                if (p.isRequired()) sb.append("  [REQUIRED]");
                 sb.append("\n    valueShape: ")
                   .append(p.getValueShapeUrl() != null ? p.getValueShapeUrl() : "(none)").append("\n");
             }
-
-            long roCount = shape.getAllProperties().values().stream()
-                    .filter(OslcProperty::isReadOnly).count();
-            sb.append("\nTotal properties: ").append(shape.getAllProperties().size())
-              .append(" (").append(roCount).append(" read-only).");
+            long roCount = shape.getAllProperties().values().stream().filter(OslcProperty::isReadOnly).count();
+            sb.append("\nTotal: ").append(shape.getAllProperties().size())
+              .append(" properties (").append(roCount).append(" read-only).");
             return sb.toString();
         } catch (Exception e) {
-            return "Error discovering resource '" + resourceName + "': " + e.getMessage()
-                    + "\nMake sure the resource name is correct and an OSLC shape exists at: "
-                    + shapeUrl(resourceName);
+            return "Error discovering '" + resourceName + "': " + e.getMessage() +
+                   "\nShape URL tried: " + shapeUrl(resourceName);
         }
     }
 
     @Tool(description =
-        "Query (search) records for any TRIRIGA OSLC resource by name. "
-        + "Works with built-in and custom resources. "
-        + "Call discoverResource(resourceName) first to see available field names for filtering. "
-        + "Example resource names: 'triWorkTask', 'triAsset', 'triLocation', 'cstCustomExample'.")
+        "Query (search) records for any TRIRIGA OSLC resource by name. " +
+        "Call discoverResource(resourceName) first to see available field names. " +
+        "Example resource names: 'triWorkTask', 'triAsset', 'triLocation', 'cstCustomExample'.")
     public String queryResource(
             @ToolParam(description = "Resource name, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName,
-            @ToolParam(description = "Optional OSLC where clause to filter results, "
-                    + "e.g. 'dcterms:title=\"My Record\"'. Leave blank to return all records.") String where,
-            @ToolParam(description = "Optional comma-separated list of field names to return. "
-                    + "Leave blank to return all fields.") String select,
-            @ToolParam(description = "Optional page size (default 50, max 200).") String pageSize) {
+            @ToolParam(description = "Optional OSLC where clause, e.g. 'dcterms:title=\"My Record\"'") String where,
+            @ToolParam(description = "Optional comma-separated field list to return") String select,
+            @ToolParam(description = "Page size (default 50, max 200)") String pageSize) {
         try {
             int size = 50;
             if (pageSize != null && !pageSize.isBlank()) {
@@ -302,174 +355,122 @@ public class TririgaOSLCService {
         } catch (Exception e) { return "Error querying '" + resourceName + "': " + e.getMessage(); }
     }
 
-    @Tool(description =
-        "Read a single TRIRIGA OSLC record by resource name and record ID. "
-        + "Returns all properties of the record. "
-        + "Example: resourceName='triWorkTask', recordId='147665710'.")
+    @Tool(description = "Read a single TRIRIGA OSLC record by resource name and record ID.")
     public String readResource(
             @ToolParam(description = "Resource name, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName,
-            @ToolParam(description = "System Record ID of the record to read, e.g. '147665710'") String recordId) {
+            @ToolParam(description = "System Record ID, e.g. '147665710'") String recordId) {
         return get(recordUrl(resourceName, recordId));
     }
 
     @Tool(description =
-        "Create a new record for any TRIRIGA OSLC resource — built-in or custom. "
-        + "Call discoverResource(resourceName) first to see available field names and types. "
-        + "Fields are supplied as a JSON-style string of key=value pairs separated by '|', e.g.: "
-        + "'title=My Record|description=Some text|schedstart=2026-03-01T08:00:00'. "
-        + "Resource-link fields (references to other records) are supplied as full URLs using the same format: "
-        + "'triAssociatedTaskType=http://host/oslc/so/triTaskTypeRS/123'. "
-        + "An optional action (e.g. 'Save') can be included to trigger a state transition on creation. "
-        + "Returns the Location URL of the newly created record on success.")
+        "Create a new record for any TRIRIGA OSLC resource — built-in or custom. " +
+        "Fields are supplied as pipe-delimited 'fieldName=value' pairs using the oslc:name of each field. " +
+        "Example: 'title=My Record|description=Test|schedstart=2026-03-01T08:00:00'. " +
+        "The builder resolves each field to the correct prefixed JSON key (e.g. 'dcterms:title') automatically. " +
+        "Use inlineChildren to create and associate child records in a single call " +
+        "(format: 'childFieldName:childField1=val1;childField2=val2|...'). " +
+        "Use linkedRecordIds to associate existing records by ID " +
+        "(format: 'fieldName:recordId1,recordId2'). " +
+        "Returns the Location URL of the newly created record on success.")
     public String createResource(
             @ToolParam(description = "Resource name, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName,
-            @ToolParam(description = "Field values as 'fieldName=value' pairs separated by '|', "
-                    + "e.g. 'title=My Record|description=Test|schedstart=2026-03-01T08:00:00'") String fields,
-            @ToolParam(description = "Optional action to apply after creation, e.g. 'Save'.") String action,
+            @ToolParam(description = "Fields as 'name=value' pairs separated by '|'") String fields,
+            @ToolParam(description = "Action to apply after creation, e.g. 'Create Draft'. Optional.") String action,
+            @ToolParam(description =
+                "Inline child records to create and associate in one call. " +
+                "Format: 'childFieldName:field1=val1;field2=val2;action=Create|childFieldName:...' " +
+                "Example: 'triAssociatedComments:triCommentTX=Hello;triCommentTypeLI=E-mail;action=Create'. Optional.") String inlineChildren,
+            @ToolParam(description =
+                "Existing record IDs to associate. " +
+                "Format: 'fieldName:id1,id2'. Example: 'triAssociatedComments:132633922'. Optional.") String linkedRecordIds,
             @ToolParam(description = "Optional unique transaction ID to prevent duplicate submissions.") String transactionId) {
         try {
             OslcShape shape = loadShapeByName(resourceName);
-            Map<String, String> literals  = new LinkedHashMap<>();
-            Map<String, String> links     = new LinkedHashMap<>();
+            Map<String, String> literalFields = new LinkedHashMap<>();
+            Map<String, List<InlineChild>> children = new LinkedHashMap<>();
+            Map<String, List<ExistingRecord>> links = new LinkedHashMap<>();
 
-            parseFields(fields, shape, literals, links);
-            if (action != null && !action.isBlank()) literals.put("action", action);
+            parseFields(fields, shape, literalFields, new LinkedHashMap<>());
 
-            String json = OslcJsonBuilder.build(shape, literals, links);
+            // Parse inline children
+            if (inlineChildren != null && !inlineChildren.isBlank()) {
+                for (String childSpec : inlineChildren.split("\\|")) {
+                    int colon = childSpec.indexOf(':');
+                    if (colon < 1) continue;
+                    String childFieldName = childSpec.substring(0, colon).trim();
+                    String childFieldStr  = childSpec.substring(colon + 1).trim();
+
+                    // Determine child shape from the parent property's valueShape
+                    OslcProperty parentProp = shape.getProperty(childFieldName);
+                    String childShapeUrl = parentProp != null ? parentProp.getValueShapeUrl() : null;
+                    OslcShape childShape = childShapeUrl != null
+                            ? shapeCache.computeIfAbsent(childShapeUrl, u ->
+                                  { try { return OslcShape.parse(u, get(u), catalog.getGlobalPrefixMap()); }
+                                    catch (Exception ex) { throw new RuntimeException(ex); }})
+                            : shape; // fallback to parent shape if no valueShape
+
+                    Map<String, String> childLiterals = new LinkedHashMap<>();
+                    String childAction = null;
+                    for (String pair : childFieldStr.split(";")) {
+                        int eq = pair.indexOf('=');
+                        if (eq < 1) continue;
+                        String k = pair.substring(0, eq).trim();
+                        String v = pair.substring(eq + 1).trim();
+                        if ("action".equals(k)) childAction = v;
+                        else childLiterals.put(k, v);
+                    }
+                    children.computeIfAbsent(childFieldName, k -> new ArrayList<>())
+                            .add(new InlineChild(childShape, childLiterals, childAction));
+                }
+            }
+
+            // Parse existing record links
+            if (linkedRecordIds != null && !linkedRecordIds.isBlank()) {
+                for (String linkSpec : linkedRecordIds.split("\\|")) {
+                    int colon = linkSpec.indexOf(':');
+                    if (colon < 1) continue;
+                    String fieldName = linkSpec.substring(0, colon).trim();
+                    String idList    = linkSpec.substring(colon + 1).trim();
+                    List<ExistingRecord> recs = links.computeIfAbsent(fieldName, k -> new ArrayList<>());
+                    for (String id : idList.split(",")) {
+                        String trimId = id.trim();
+                        if (!trimId.isEmpty()) recs.add(new ExistingRecord(trimId));
+                    }
+                }
+            }
+
+            String json = OslcJsonBuilder.build(shape, literalFields, action,
+                    children.isEmpty() ? null : children,
+                    links.isEmpty()    ? null : links);
             OslcCreateResult result = post(createUrl(resourceName), json, transactionId);
             return result.toString();
         } catch (Exception e) { return "Error creating '" + resourceName + "': " + e.getMessage(); }
     }
 
     @Tool(description =
-        "Update an existing TRIRIGA OSLC record — built-in or custom. "
-        + "Call discoverResource(resourceName) first to see available field names. "
-        + "Supply only the fields you want to change; all others are left untouched. "
-        + "Fields are supplied as a JSON-style string of key=value pairs separated by '|', e.g.: "
-        + "'description=Updated text|wopriority=High'. "
-        + "An optional action (e.g. 'Save', 'Complete') triggers a state transition.")
+        "Update an existing TRIRIGA OSLC record — built-in or custom. " +
+        "Supply only the fields you want to change. " +
+        "Supports inline child creation and existing record linking with same syntax as createResource.")
     public String updateResource(
             @ToolParam(description = "Resource name, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName,
-            @ToolParam(description = "System Record ID of the record to update, e.g. '147665710'") String recordId,
-            @ToolParam(description = "Field values as 'fieldName=value' pairs separated by '|', "
-                    + "e.g. 'description=New text|wopriority=High'") String fields,
+            @ToolParam(description = "System Record ID, e.g. '147665710'") String recordId,
+            @ToolParam(description = "Fields as 'name=value' pairs separated by '|'") String fields,
             @ToolParam(description = "Optional action to apply, e.g. 'Save' or 'Complete'.") String action) {
         try {
             OslcShape shape = loadShapeByName(resourceName);
-            Map<String, String> literals  = new LinkedHashMap<>();
-            Map<String, String> links     = new LinkedHashMap<>();
-
-            parseFields(fields, shape, literals, links);
-            if (action != null && !action.isBlank()) literals.put("action", action);
-
-            String json = OslcJsonBuilder.build(shape, literals, links);
+            Map<String, String> literalFields = new LinkedHashMap<>();
+            parseFields(fields, shape, literalFields, new LinkedHashMap<>());
+            literalFields.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
+            String json = OslcJsonBuilder.build(shape, literalFields, action);
             return put(recordUrl(resourceName, recordId), json);
         } catch (Exception e) { return "Error updating '" + resourceName + "' id=" + recordId + ": " + e.getMessage(); }
     }
 
-    @Tool(description =
-        "Delete a TRIRIGA OSLC record by resource name and record ID. "
-        + "This operation is permanent and cannot be undone. "
-        + "Example: resourceName='triWorkTask', recordId='147665710'.")
+    @Tool(description = "Delete a TRIRIGA OSLC record by resource name and record ID. Permanent.")
     public String deleteResource(
             @ToolParam(description = "Resource name, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName,
-            @ToolParam(description = "System Record ID of the record to delete.") String recordId) {
+            @ToolParam(description = "System Record ID to delete.") String recordId) {
         return delete(recordUrl(resourceName, recordId));
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    //  Catalog helpers
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /** Ensures the catalog is built, building it lazily on first call. */
-    private void ensureCatalog() {
-        if (!catalog.isBuilt()) {
-            try {
-                catalog.build(tririgaUrl() + "/oslc/sp", this::get);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to build shape catalog: " + e.getMessage(), e);
-            }
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    //  ★ FIND SHAPE TOOL
-    // ─────────────────────────────────────────────────────────────────────────
-
-    @Tool(description =
-        "Find the correct TRIRIGA OSLC resource shape for a natural language description. "
-        + "Use this tool whenever you are unsure which resourceName to use — for example: "
-        + "'person', 'people', 'user', 'work order', 'room', 'building', 'asset', 'reservation', "
-        + "'security group', 'organization', 'floor plan', and so on. "
-        + "The tool searches all registered TRIRIGA resource shapes by their human-readable titles, "
-        + "resource types, and names, and returns matching shapes with the resourceName to use "
-        + "in discoverResource(), queryResource(), createResource(), updateResource(), and deleteResource(). "
-        + "Pass a blank or '*' keywords to list ALL available shapes. "
-        + "The catalog is built by crawling all TRIRIGA service providers on first call and cached thereafter. "
-        + "Call refreshCatalog() if you believe new custom shapes have been added to TRIRIGA.")
-    public String findShape(
-            @ToolParam(description = "Natural language keywords describing the resource, "
-                    + "e.g. 'person', 'work order', 'building floor', 'reservation', 'security group'. "
-                    + "Use '*' or leave blank to list all shapes.") String keywords) {
-        try {
-            ensureCatalog();
-
-            boolean listAll = keywords == null || keywords.isBlank() || keywords.equals("*");
-            List<OslcShapeEntry> results = listAll
-                    ? new ArrayList<>(catalog.all())
-                    : catalog.search(keywords);
-
-            if (results.isEmpty()) {
-                return "No shapes found matching \"" + keywords + "\".\n"
-                     + "Tip: try broader terms, or use findShape('*') to list all "
-                     + catalog.size() + " shapes in the catalog.";
-            }
-
-            StringBuilder sb = new StringBuilder();
-            if (listAll) {
-                sb.append("All TRIRIGA OSLC resource shapes (").append(catalog.size()).append(" total):\n\n");
-            } else {
-                sb.append("Shapes matching \"").append(keywords).append("\" — ")
-                  .append(results.size()).append(" result(s):\n\n");
-            }
-
-            // Group results by service provider for readability
-            Map<String, List<OslcShapeEntry>> byProvider = new LinkedHashMap<>();
-            for (OslcShapeEntry e : results) {
-                byProvider.computeIfAbsent(e.getServiceProviderTitle(), k -> new ArrayList<>()).add(e);
-            }
-
-            for (Map.Entry<String, List<OslcShapeEntry>> group : byProvider.entrySet()) {
-                sb.append("── ").append(group.getKey()).append(" ──\n");
-                for (OslcShapeEntry e : group.getValue()) {
-                    sb.append(e.toSummaryLine()).append("\n\n");
-                }
-            }
-
-            sb.append("─────────────────────────────────────────────\n");
-            sb.append("To work with a shape, call discoverResource(resourceName) for full field details,\n");
-            sb.append("then use queryResource / createResource / updateResource / deleteResource.");
-            return sb.toString();
-
-        } catch (Exception e) {
-            return "Error searching shapes: " + e.getMessage();
-        }
-    }
-
-    @Tool(description =
-        "Refresh the TRIRIGA shape catalog by re-crawling all service providers. "
-        + "Use this after a new custom resource shape (e.g. cstCustomExample) has been "
-        + "registered in TRIRIGA's OSLC configuration, so findShape() can discover it. "
-        + "This also clears all cached resource shapes loaded by describeShape().")
-    public String refreshCatalog() {
-        catalog.invalidate();
-        shapeCache.clear();
-        try {
-            ensureCatalog();
-            return "Catalog refreshed: " + catalog.size() + " shapes indexed across all service providers.";
-        } catch (Exception e) {
-            return "Error refreshing catalog: " + e.getMessage();
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -486,12 +487,12 @@ public class TririgaOSLCService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  Typed Work Task tools (convenience wrappers over the generic tools)
+    //  Typed Work Task tools (convenience wrappers)
     // ─────────────────────────────────────────────────────────────────────────
 
-    @Tool(description = "Query TRIRIGA Work Tasks with optional OSLC filtering and field selection.")
+    @Tool(description = "Query TRIRIGA Work Tasks with optional OSLC filtering.")
     public String queryWorkTasks(
-            @ToolParam(description = "OSLC where clause, e.g. 'dcterms:title=\"Fix HVAC\"'. Blank = all.") String where,
+            @ToolParam(description = "OSLC where clause. Blank = all.") String where,
             @ToolParam(description = "Comma-separated properties to return. Blank = all.") String select) {
         return queryResource("triWorkTask", where, select, "50");
     }
@@ -525,39 +526,26 @@ public class TririgaOSLCService {
     }
 
     @Tool(description =
-        "Create a new TRIRIGA Work Task. Typed convenience wrapper over createResource. "
-        + "For full field control use createResource('triWorkTask', ...) after calling "
-        + "discoverResource('triWorkTask').")
+        "Create a new TRIRIGA Work Task with full support for inline comments. " +
+        "For generic resource creation use createResource('triWorkTask', ...).")
     public String createWorkTask(
             @ToolParam(description = "Task title (required).") String title,
             @ToolParam(description = "Task description. Optional.") String description,
-            @ToolParam(description = "Planned start in ISO-8601, e.g. 2026-03-01T08:00:00. Required.") String plannedStart,
+            @ToolParam(description = "Planned start in ISO-8601. Required.") String plannedStart,
             @ToolParam(description = "Planned end in ISO-8601. Optional.") String plannedEnd,
-            @ToolParam(description = "Priority string, e.g. 'Medium'. Optional.") String priority,
-            @ToolParam(description = "Task type string, e.g. 'Corrective'. Optional.") String taskType,
-            @ToolParam(description = "Primary work location text. Optional.") String workLocation,
-            @ToolParam(description = "Full URL of a triTaskTypeRS record. Optional.") String taskTypeUrl,
-            @ToolParam(description = "Full URL of a triPriorityRS record. Optional.") String priorityUrl,
-            @ToolParam(description = "Action to apply after creation, e.g. 'Save'. Optional.") String action,
-            @ToolParam(description = "Optional unique transaction ID.") String transactionId) {
+            @ToolParam(description = "Task type, e.g. 'Corrective'. Optional.") String taskType,
+            @ToolParam(description = "Action, e.g. 'Create Draft'. Optional.") String action,
+            @ToolParam(description = "Transaction ID. Optional.") String transactionId) {
         try {
             OslcShape shape = loadShape(SHAPE_WORK_TASK);
-
-            Map<String, String> literals = new LinkedHashMap<>();
-            literals.put("title",                title);
-            literals.put("description",          description);
-            literals.put("schedstart",           plannedStart);
-            literals.put("schedfinish",          plannedEnd);
-            literals.put("wopriority",           priority);
-            literals.put("triTaskTypeCL",        taskType);
-            literals.put("triWorkingLocationTX", workLocation);
-            literals.put("action",               action);
-
-            Map<String, String> links = new LinkedHashMap<>();
-            links.put("triAssociatedTaskType", taskTypeUrl);
-            links.put("triAssociatedPriority", priorityUrl);
-
-            String json = OslcJsonBuilder.build(shape, literals, links);
+            Map<String, String> fields = new LinkedHashMap<>();
+            fields.put("title",       title);
+            fields.put("description", description);
+            fields.put("schedstart",  plannedStart);
+            fields.put("schedfinish", plannedEnd);
+            fields.put("triTaskTypeCL", taskType);
+            fields.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
+            String json = OslcJsonBuilder.build(shape, fields, action);
             return post(createUrl("triWorkTask"), json, transactionId).toString();
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
@@ -569,32 +557,18 @@ public class TririgaOSLCService {
             @ToolParam(description = "New description. Optional.") String description,
             @ToolParam(description = "New planned start in ISO-8601. Optional.") String plannedStart,
             @ToolParam(description = "New planned end in ISO-8601. Optional.") String plannedEnd,
-            @ToolParam(description = "New priority string. Optional.") String priority,
-            @ToolParam(description = "New task type string. Optional.") String taskType,
-            @ToolParam(description = "New work location text. Optional.") String workLocation,
-            @ToolParam(description = "New triTaskTypeRS resource URL. Optional.") String taskTypeUrl,
-            @ToolParam(description = "New triPriorityRS resource URL. Optional.") String priorityUrl,
-            @ToolParam(description = "Action to apply, e.g. 'Save' or 'Complete'. Optional.") String action) {
+            @ToolParam(description = "New task type. Optional.") String taskType,
+            @ToolParam(description = "Action, e.g. 'Save' or 'Complete'. Optional.") String action) {
         try {
             OslcShape shape = loadShape(SHAPE_WORK_TASK);
-
-            Map<String, String> literals = new LinkedHashMap<>();
-            literals.put("title",                title);
-            literals.put("description",          description);
-            literals.put("schedstart",           plannedStart);
-            literals.put("schedfinish",          plannedEnd);
-            literals.put("wopriority",           priority);
-            literals.put("triTaskTypeCL",        taskType);
-            literals.put("triWorkingLocationTX", workLocation);
-            literals.put("action",               action);
-            literals.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
-
-            Map<String, String> links = new LinkedHashMap<>();
-            links.put("triAssociatedTaskType", taskTypeUrl);
-            links.put("triAssociatedPriority", priorityUrl);
-            links.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
-
-            String json = OslcJsonBuilder.build(shape, literals, links);
+            Map<String, String> fields = new LinkedHashMap<>();
+            fields.put("title",       title);
+            fields.put("description", description);
+            fields.put("schedstart",  plannedStart);
+            fields.put("schedfinish", plannedEnd);
+            fields.put("triTaskTypeCL", taskType);
+            fields.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
+            String json = OslcJsonBuilder.build(shape, fields, action);
             return put(recordUrl("triWorkTask", recordId), json);
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
@@ -638,7 +612,7 @@ public class TririgaOSLCService {
                 + (searchTerm != null && !searchTerm.isBlank() ? "&oslc.searchTerms=" + encode(searchTerm) : ""));
     }
 
-    @Tool(description = "Query TRIRIGA Reservable Spaces available for booking.")
+    @Tool(description = "Query TRIRIGA Reservable Spaces.")
     public String queryReservableSpaces(
             @ToolParam(description = "Optional OSLC where clause.") String where) {
         return get(tririgaUrl() + "/oslc/spq/triReservableSpaceQC?oslc.pageSize=50"
@@ -655,47 +629,32 @@ public class TririgaOSLCService {
     @Tool(description = "Get all TRIRIGA Work Task Statuses.")
     public String getWorkTaskStatuses() { return get(tririgaUrl() + "/oslc/spq/triStatusesQC"); }
 
-    @Tool(description = "Get all TRIRIGA Priority records. "
-            + "Use returned resource URLs as priorityUrl in create/update calls.")
+    @Tool(description = "Get all TRIRIGA Priority records.")
     public String getPriorities() { return get(tririgaUrl() + "/oslc/spq/triPrioritiesQC"); }
 
-    @Tool(description = "Get all TRIRIGA Task Type records. "
-            + "Use returned resource URLs as taskTypeUrl in create/update calls.")
+    @Tool(description = "Get all TRIRIGA Task Type records.")
     public String getTaskTypes() { return get(tririgaUrl() + "/oslc/spq/triTaskTypesQC"); }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  Internal utilities
+    //  Utilities
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Parses a pipe-delimited "fieldName=value|fieldName=value" string and
-     * routes each entry into either the literals map or the links map based
-     * on whether the shape defines that field as a resource link or a literal.
-     *
-     * Values that look like URLs (start with "http") and belong to a resource-link
-     * field are placed in links; everything else goes to literals.
+     * Parses a pipe-delimited "fieldName=value" string and routes each entry
+     * into the literals or links map based on the shape's property type.
      */
     private void parseFields(String fieldString, OslcShape shape,
                               Map<String, String> literals, Map<String, String> links) {
         if (fieldString == null || fieldString.isBlank()) return;
-
         for (String pair : fieldString.split("\\|")) {
             int eq = pair.indexOf('=');
             if (eq < 1) continue;
-
             String name  = pair.substring(0, eq).trim();
             String value = pair.substring(eq + 1).trim();
             if (name.isEmpty() || value.isEmpty()) continue;
-
             OslcProperty prop = shape.getProperty(name);
-
-            if (prop != null && prop.isResourceLink()) {
-                links.put(name, value);
-            } else {
-                // Unknown fields also go to literals — OslcJsonBuilder will skip them
-                // gracefully if they're not in the shape
-                literals.put(name, value);
-            }
+            if (prop != null && prop.isResourceLink()) links.put(name, value);
+            else literals.put(name, value);
         }
     }
 
