@@ -102,14 +102,23 @@ public class TririgaOSLCService {
         }
     }
 
-    private String put(String url, String jsonBody) {
+    /**
+     * Update a TRIRIGA record using POST with method-override headers.
+     * TRIRIGA uses POST+PATCH instead of HTTP PUT for updates:
+     *   x-method-override: PATCH
+     *   PATCHTYPE: MERGE
+     * Only fields present in the body are changed; omitted fields are untouched.
+     */
+    private String patch(String url, String jsonBody) {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Authorization",     "Basic " + encodedAuth())
                 .header("OSLC-Core-Version", "2.0")
                 .header("Content-Type",      "application/json;charset=utf-8")
                 .header("Accept",            "application/rdf+xml")
-                .PUT(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8)).build();
+                .header("x-method-override", "PATCH")
+                .header("PATCHTYPE",         "MERGE")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8)).build();
         try {
             return HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString()).body();
         } catch (IOException | InterruptedException e) { return "Error: " + e.getMessage(); }
@@ -301,7 +310,7 @@ public class TririgaOSLCService {
             sb.append("  Query:   ").append(queryUrl(resourceName)).append("\n");
             sb.append("  Create:  ").append(createUrl(resourceName)).append("\n");
             sb.append("  Read:    ").append(recordUrl(resourceName, "{id}")).append("\n");
-            sb.append("  Update:  ").append(recordUrl(resourceName, "{id}")).append(" (PUT)\n");
+            sb.append("  Update:  ").append(recordUrl(resourceName, "{id}")).append(" (POST + x-method-override: PATCH)\n");
             sb.append("  Delete:  ").append(recordUrl(resourceName, "{id}")).append(" (DELETE)\n\n");
 
             List<OslcProperty> literals = shape.getWritableLiteralProperties();
@@ -462,7 +471,7 @@ public class TririgaOSLCService {
             parseFields(fields, shape, literalFields, new LinkedHashMap<>());
             literalFields.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
             String json = OslcJsonBuilder.build(shape, literalFields, action);
-            return put(recordUrl(resourceName, recordId), json);
+            return patch(recordUrl(resourceName, recordId), json);
         } catch (Exception e) { return "Error updating '" + resourceName + "' id=" + recordId + ": " + e.getMessage(); }
     }
 
@@ -569,7 +578,7 @@ public class TririgaOSLCService {
             fields.put("triTaskTypeCL", taskType);
             fields.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
             String json = OslcJsonBuilder.build(shape, fields, action);
-            return put(recordUrl("triWorkTask", recordId), json);
+            return patch(recordUrl("triWorkTask", recordId), json);
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
 
