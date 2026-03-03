@@ -13,6 +13,10 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayInputStream;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -633,6 +637,49 @@ public class TririgaOSLCService {
             @ToolParam(description = "Optional OSLC where clause.") String where) {
         return get(tririgaUrl() + "/oslc/spq/triExchangeAppointmentQC?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
+    }
+
+    @Tool(description =
+        "Get the actions available for a specific TRIRIGA record in its current state. " +
+        "Actions are state-transition commands valid for the record right now, " +
+        "e.g. 'Save', 'Complete', 'Retire', 'Hold for Parts'. " +
+        "The set of available actions changes depending on the record's current status. " +
+        "Always call this before passing an action to createResource, updateResource, " +
+        "createWorkTask, or updateWorkTask to ensure the action is valid. " +
+        "Example: resourceName='triWorkTask', recordId='147665710'.")
+    public String getAvailableActions(
+            @ToolParam(description = "Resource name, e.g. 'triWorkTask' or 'cstCustomExample'") String resourceName,
+            @ToolParam(description = "System Record ID of the record to inspect, e.g. '147665710'") String recordId) {
+        try {
+            String actionUrl = tririgaUrl() + "/oslc/system/action/" + resourceName + "RS/" + recordId;
+            String xml = get(actionUrl);
+
+            // Parse oslc:allowedValue elements from the RDF/XML response
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            Document doc = factory.newDocumentBuilder()
+                    .parse(new ByteArrayInputStream(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+            NodeList nodes = doc.getElementsByTagNameNS("http://open-services.net/ns/core#", "allowedValue");
+
+            if (nodes.getLength() == 0) {
+                return "No actions available for " + resourceName + " record " + recordId +
+                       ". The record may be in a terminal state, or the record ID may be invalid.";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("Available actions for ").append(resourceName)
+              .append(" record ").append(recordId).append(":");
+            for (int i = 0; i < nodes.getLength(); i++) {
+                String action = nodes.item(i).getTextContent().trim();
+                if (!action.isBlank()) sb.append("  - ").append(action).append("");
+            }
+            sb.append("Pass one of these action values to the action parameter of ");
+            sb.append("updateResource() or updateWorkTask() to trigger a state transition.");
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error fetching actions for " + resourceName + " / " + recordId + ": " + e.getMessage();
+        }
     }
 
     @Tool(description = "Get all TRIRIGA Work Task Statuses.")
