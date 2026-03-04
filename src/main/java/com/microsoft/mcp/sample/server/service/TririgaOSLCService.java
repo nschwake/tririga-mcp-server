@@ -24,13 +24,36 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import jakarta.annotation.PostConstruct;
+
 @Service
 public class TririgaOSLCService {
+
+    private static final Logger logger = LoggerFactory.getLogger(TririgaOSLCService.class);
+
+    // ─── Configuration ───────────────────────────────────────────────────────
+    @Value("${TRIRIGA_URL:#{null}}")
+    private String tririgaUrl;
+
+    @Value("${TRIRIGA_USER:#{null}}")
+    private String tririgaUser;
+
+    @Value("${TRIRIGA_PASS:#{null}}")
+    private String tririgaPass;
+
+    private String encodedAuth;
+
+    // ─── HTTP Client (shared, configured) ────────────────────────────────────
+    private final HttpClient httpClient;
 
     // ─── Shape paths ─────────────────────────────────────────────────────────
     private static final String SHAPE_WORK_TASK = "/oslc/shapes/triWorkTaskRS";
@@ -44,6 +67,46 @@ public class TririgaOSLCService {
     // ─── Transaction ID counter ──────────────────────────────────────────────
     private final AtomicLong txCounter = new AtomicLong(System.currentTimeMillis());
 
+    // ─── Constructor ─────────────────────────────────────────────────────────
+    public TririgaOSLCService() {
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+    }
+
+    @PostConstruct
+    private void init() {
+        // Fallback to environment variables if Spring properties not set
+        if (tririgaUrl == null) {
+            tririgaUrl = System.getenv("TRIRIGA_URL");
+        }
+        if (tririgaUser == null) {
+            tririgaUser = System.getenv("TRIRIGA_USER");
+        }
+        if (tririgaPass == null) {
+            tririgaPass = System.getenv("TRIRIGA_PASS");
+        }
+
+        // Validate configuration
+        if (tririgaUrl == null || tririgaUrl.isBlank()) {
+            throw new IllegalStateException("TRIRIGA_URL is not configured");
+        }
+        if (tririgaUser == null || tririgaUser.isBlank()) {
+            throw new IllegalStateException("TRIRIGA_USER is not configured");
+        }
+        if (tririgaPass == null || tririgaPass.isBlank()) {
+            throw new IllegalStateException("TRIRIGA_PASS is not configured");
+        }
+
+        // Pre-encode authentication (only once)
+        this.encodedAuth = Base64.getEncoder()
+                .encodeToString((tririgaUser + ":" + tririgaPass).getBytes(StandardCharsets.UTF_8));
+
+        logger.info("TririgaOSLCService initialized with URL: {}", tririgaUrl);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  TRIRIGA URL conventions
     //
@@ -54,55 +117,78 @@ public class TririgaOSLCService {
     //  Delete:       /oslc/so/{name}RS/{id}  (HTTP DELETE)
     // ─────────────────────────────────────────────────────────────────────────
 
-    private String shapeUrl(String n)              { return tririgaUrl() + "/oslc/shapes/" + n + "RS"; }
-    private String queryUrl(String n)              { return tririgaUrl() + "/oslc/spq/"   + n + "QC"; }
-    private String createUrl(String n)             { return tririgaUrl() + "/oslc/so/"    + n + "CF"; }
-    private String recordUrl(String n, String id)  { return tririgaUrl() + "/oslc/so/"    + n + "RS/" + id; }
+    private String shapeUrl(String n)              { return tririgaUrl + "/oslc/shapes/" + n + "RS"; }
+    private String queryUrl(String n)              { return tririgaUrl + "/oslc/spq/"   + n + "QC"; }
+    private String createUrl(String n)             { return tririgaUrl + "/oslc/so/"    + n + "CF"; }
+    private String recordUrl(String n, String id)  { return tririgaUrl + "/oslc/so/"    + n + "RS/" + id; }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  HTTP helpers
     // ─────────────────────────────────────────────────────────────────────────
 
-    private String tririgaUrl() { return System.getenv("TRIRIGA_URL"); }
-
-    private String encodedAuth() {
-        String user = System.getenv("TRIRIGA_USER");
-        String pass = System.getenv("TRIRIGA_PASS");
-        return Base64.getEncoder().encodeToString((user + ":" + pass).getBytes());
-    }
-
     private String get(String url) {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("Authorization",     "Basic " + encodedAuth())
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization",     "Basic " + encodedAuth)
                 .header("OSLC-Core-Version", "2.0")
                 .header("Accept",            "application/rdf+xml")
                 .GET().build();
         try {
-            return HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString()).body();
-        } catch (IOException | InterruptedException e) { return "Error: " + e.getMessage(); }
+            HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() >= 400) {
+                logger.warn("HTTP {} error for GET {}: {}", 
+                    response.statusCode(), url, response.body());
+                return "Error: HTTP " + response.statusCode() + " - " + response.body();
+            }
+            
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Request interrupted for URL: {}", url, e);
+            return "Error: Request interrupted - " + e.getMessage();
+        } catch (IOException e) {
+            logger.error("I/O error for GET {}: {}", url, e.getMessage());
+            return "Error: Network error - " + e.getMessage();
+        }
     }
 
     private OslcCreateResult post(String url, String jsonBody, String transactionId) {
         String txId = (transactionId != null && !transactionId.isBlank())
                 ? transactionId : String.valueOf(txCounter.incrementAndGet());
+        
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("Authorization",     "Basic " + encodedAuth())
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization",     "Basic " + encodedAuth)
                 .header("OSLC-Core-Version", "2.0")
                 .header("Content-Type",      "application/json;charset=utf-8")
                 .header("Accept",            "application/rdf+xml")
                 .header("transactionid",     txId)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8)).build();
+        
         try {
-            HttpResponse<String> r = HttpClient.newHttpClient()
-                    .send(req, HttpResponse.BodyHandlers.ofString());
-            return new OslcCreateResult(r.statusCode(),
-                    r.headers().firstValue("Location").orElse(null),
-                    r.headers().firstValue("ETag").orElse(null),
-                    r.body());
-        } catch (IOException | InterruptedException e) {
-            return new OslcCreateResult(500, null, null, "Error: " + e.getMessage());
+            HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() >= 400) {
+                logger.warn("HTTP {} error for POST {}: {}", 
+                    response.statusCode(), url, response.body());
+            }
+            
+            return new OslcCreateResult(
+                response.statusCode(),
+                response.headers().firstValue("Location").orElse(null),
+                response.headers().firstValue("ETag").orElse(null),
+                response.body()
+            );
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Request interrupted for URL: {}", url, e);
+            return new OslcCreateResult(500, null, null, "Error: Request interrupted - " + e.getMessage());
+        } catch (IOException e) {
+            logger.error("I/O error for POST {}: {}", url, e.getMessage());
+            return new OslcCreateResult(500, null, null, "Error: Network error - " + e.getMessage());
         }
     }
 
@@ -116,31 +202,62 @@ public class TririgaOSLCService {
     private String patch(String url, String jsonBody) {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("Authorization",     "Basic " + encodedAuth())
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization",     "Basic " + encodedAuth)
                 .header("OSLC-Core-Version", "2.0")
                 .header("Content-Type",      "application/json;charset=utf-8")
                 .header("Accept",            "application/rdf+xml")
                 .header("x-method-override", "PATCH")
                 .header("PATCHTYPE",         "MERGE")
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8)).build();
+        
         try {
-            return HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString()).body();
-        } catch (IOException | InterruptedException e) { return "Error: " + e.getMessage(); }
+            HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() >= 400) {
+                logger.warn("HTTP {} error for PATCH {}: {}", 
+                    response.statusCode(), url, response.body());
+                return "Error: HTTP " + response.statusCode() + " - " + response.body();
+            }
+            
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Request interrupted for URL: {}", url, e);
+            return "Error: Request interrupted - " + e.getMessage();
+        } catch (IOException e) {
+            logger.error("I/O error for PATCH {}: {}", url, e.getMessage());
+            return "Error: Network error - " + e.getMessage();
+        }
     }
 
     private String delete(String url) {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("Authorization",     "Basic " + encodedAuth())
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization",     "Basic " + encodedAuth)
                 .header("OSLC-Core-Version", "2.0")
                 .DELETE().build();
+        
         try {
-            HttpResponse<String> r = HttpClient.newHttpClient()
-                    .send(req, HttpResponse.BodyHandlers.ofString());
-            return (r.statusCode() == 200 || r.statusCode() == 204)
-                    ? "Deleted successfully (HTTP " + r.statusCode() + ")."
-                    : "Delete failed (HTTP " + r.statusCode() + "): " + r.body();
-        } catch (IOException | InterruptedException e) { return "Error: " + e.getMessage(); }
+            HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() == 200 || response.statusCode() == 204) {
+                logger.info("Successfully deleted resource at {}", url);
+                return "Deleted successfully (HTTP " + response.statusCode() + ").";
+            } else {
+                logger.warn("Delete failed with HTTP {} for {}: {}", 
+                    response.statusCode(), url, response.body());
+                return "Delete failed (HTTP " + response.statusCode() + "): " + response.body();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Request interrupted for URL: {}", url, e);
+            return "Error: Request interrupted - " + e.getMessage();
+        } catch (IOException e) {
+            logger.error("I/O error for DELETE {}: {}", url, e.getMessage());
+            return "Error: Network error - " + e.getMessage();
+        }
     }
 
     private String encode(String v) { return URLEncoder.encode(v, StandardCharsets.UTF_8); }
@@ -152,7 +269,7 @@ public class TririgaOSLCService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private OslcShape loadShape(String shapePath) {
-        String fullUrl = tririgaUrl() + shapePath;
+        String fullUrl = tririgaUrl + shapePath;
         return shapeCache.computeIfAbsent(fullUrl, url -> {
             try {
                 ensureCatalog();
@@ -173,7 +290,7 @@ public class TririgaOSLCService {
 
     private void ensureCatalog() {
         if (!catalog.isBuilt()) {
-            try { catalog.build(tririgaUrl() + "/oslc/sp", this::get); }
+            try { catalog.build(tririgaUrl + "/oslc/sp", this::get); }
             catch (Exception e) {
                 throw new RuntimeException("Failed to build shape catalog: " + e.getMessage(), e);
             }
@@ -236,7 +353,7 @@ public class TririgaOSLCService {
     public String refreshShape(
             @ToolParam(description = "Full shape path to reload. Pattern: /oslc/shapes/{resourceName}RS. " +
                 "Example: '/oslc/shapes/triWorkTaskRS'.") String shapePath) {
-        shapeCache.remove(tririgaUrl() + shapePath);
+        shapeCache.remove(tririgaUrl + shapePath);
         try {
             OslcShape shape = loadShape(shapePath);
             return "Reloaded: " + shape.getTitle()
@@ -614,7 +731,7 @@ public class TririgaOSLCService {
         "Each service provider groups related resource shapes (e.g. Work Management, BIM, Reservations). " +
         "Use findShape() to search across all providers in plain language. " +
         "Use this tool only if you need the raw service provider catalog structure.")
-    public String getOSLCSP() { return get(tririgaUrl() + "/oslc/sp"); }
+    public String getOSLCSP() { return get(tririgaUrl + "/oslc/sp"); }
 
     @Tool(description =
         "DIAGNOSTIC TOOL. Fetches any TRIRIGA OSLC URL and returns the raw RDF/XML response. " +
@@ -651,7 +768,7 @@ public class TririgaOSLCService {
     public String queryMyAssignedWorkTasks(
             @ToolParam(description = "Optional additional OSLC filter, e.g. 'spi_wm:status=\"Active\"'. " +
                 "Leave blank to return all assigned tasks.") String where) {
-        return get(tririgaUrl() + "/oslc/spq/triMyAssignedWorkTasksQC?oslc.pageSize=50"
+        return get(tririgaUrl + "/oslc/spq/triMyAssignedWorkTasksQC?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -661,7 +778,7 @@ public class TririgaOSLCService {
         "or 'tasks I raised'.")
     public String queryMyCreatedWorkTasks(
             @ToolParam(description = "Optional additional OSLC filter. Leave blank for all created tasks.") String where) {
-        return get(tririgaUrl() + "/oslc/spq/triMyCreatedWorkTasksQC?oslc.pageSize=50"
+        return get(tririgaUrl + "/oslc/spq/triMyCreatedWorkTasksQC?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -671,7 +788,7 @@ public class TririgaOSLCService {
         "or 'my task history'.")
     public String queryMyCompletedWorkTasks(
             @ToolParam(description = "Optional additional OSLC filter. Leave blank for all completed tasks.") String where) {
-        return get(tririgaUrl() + "/oslc/spq/triMyCompletedWorkTasksQC?oslc.pageSize=50"
+        return get(tririgaUrl + "/oslc/spq/triMyCompletedWorkTasksQC?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -683,7 +800,7 @@ public class TririgaOSLCService {
     public String searchWorkTasks(
             @ToolParam(description = "Keyword or phrase to search for across all work task fields. " +
                 "Examples: 'HVAC', 'roof leak', 'elevator inspection'.") String keyword) {
-        return get(tririgaUrl() + "/oslc/spq/triWorkTaskSearchResultsQC?oslc.pageSize=50"
+        return get(tririgaUrl + "/oslc/spq/triWorkTaskSearchResultsQC?oslc.pageSize=50"
                 + "&oslc.searchTerms=" + encode(keyword));
     }
 
@@ -767,7 +884,7 @@ public class TririgaOSLCService {
         "Use when the user provides an asset name, description, or barcode value.")
     public String lookupAssets(
             @ToolParam(description = "Asset name or barcode to search for. Example: 'Elevator 2B' or '00042391'.") String searchTerm) {
-        return get(tririgaUrl() + "/oslc/spq/triAssetsLookupQC?oslc.pageSize=25"
+        return get(tririgaUrl + "/oslc/spq/triAssetsLookupQC?oslc.pageSize=25"
                 + "&oslc.searchTerms=" + encode(searchTerm));
     }
 
@@ -789,7 +906,7 @@ public class TririgaOSLCService {
     public String lookupBuildings(
             @ToolParam(description = "Building name or partial name to search for. " +
                 "Leave blank to return all buildings. Example: 'North Tower'.") String searchTerm) {
-        return get(tririgaUrl() + "/oslc/spq/triBuildingLookupQC?oslc.pageSize=25"
+        return get(tririgaUrl + "/oslc/spq/triBuildingLookupQC?oslc.pageSize=25"
                 + (searchTerm != null && !searchTerm.isBlank() ? "&oslc.searchTerms=" + encode(searchTerm) : ""));
     }
 
@@ -799,7 +916,7 @@ public class TririgaOSLCService {
     public String lookupFloorsAndSpaces(
             @ToolParam(description = "Floor or space name to search for. " +
                 "Leave blank to return all. Example: 'Floor 3' or 'Conference Room B'.") String searchTerm) {
-        return get(tririgaUrl() + "/oslc/spq/triFloorandSpaceLookupQC?oslc.pageSize=25"
+        return get(tririgaUrl + "/oslc/spq/triFloorandSpaceLookupQC?oslc.pageSize=25"
                 + (searchTerm != null && !searchTerm.isBlank() ? "&oslc.searchTerms=" + encode(searchTerm) : ""));
     }
 
@@ -809,7 +926,7 @@ public class TririgaOSLCService {
     public String queryReservableSpaces(
             @ToolParam(description = "Optional OSLC filter to narrow results, e.g. by capacity or building. " +
                 "Leave blank to return all reservable spaces.") String where) {
-        return get(tririgaUrl() + "/oslc/spq/triReservableSpaceQC?oslc.pageSize=50"
+        return get(tririgaUrl + "/oslc/spq/triReservableSpaceQC?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -818,7 +935,7 @@ public class TririgaOSLCService {
         "Use when the user asks about existing room bookings, calendar reservations, or appointments.")
     public String queryExchangeAppointments(
             @ToolParam(description = "Optional OSLC filter. Leave blank to return all reservations.") String where) {
-        return get(tririgaUrl() + "/oslc/spq/triExchangeAppointmentQC?oslc.pageSize=50"
+        return get(tririgaUrl + "/oslc/spq/triExchangeAppointmentQC?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -843,7 +960,7 @@ public class TririgaOSLCService {
             @ToolParam(description = "System Record ID (dcterms:identifier) of the record. " +
                 "Obtain from queryResource() results. Example: '147665710'.") String recordId) {
         try {
-            String actionUrl = tririgaUrl() + "/oslc/system/action/" + resourceName + "RS/" + recordId;
+            String actionUrl = tririgaUrl + "/oslc/system/action/" + resourceName + "RS/" + recordId;
             String xml = get(actionUrl);
 
             // Parse oslc:allowedValue elements from the RDF/XML response
@@ -879,20 +996,20 @@ public class TririgaOSLCService {
         "(e.g. Draft, Active, On Hold, Completed, Retired). " +
         "Use when filtering work tasks by status in a where clause, " +
         "or when the user asks what statuses are possible.")
-    public String getWorkTaskStatuses() { return get(tririgaUrl() + "/oslc/spq/triStatusesQC"); }
+    public String getWorkTaskStatuses() { return get(tririgaUrl + "/oslc/spq/triStatusesQC"); }
 
     @Tool(description =
         "Returns all valid Priority records with their names and resource URLs. " +
         "Use when the user specifies a priority level for a work task and you need " +
         "the resource URL to pass as a linked field in createResource() or updateResource().")
-    public String getPriorities() { return get(tririgaUrl() + "/oslc/spq/triPrioritiesQC"); }
+    public String getPriorities() { return get(tririgaUrl + "/oslc/spq/triPrioritiesQC"); }
 
     @Tool(description =
         "Returns all valid Task Type records (e.g. Corrective, Preventive, Inspection) " +
         "with their names and resource URLs. " +
         "Use when the user specifies a task type and you need to confirm it is valid, " +
         "or to get the resource URL for a linked field in createResource() or updateResource().")
-    public String getTaskTypes() { return get(tririgaUrl() + "/oslc/spq/triTaskTypesQC"); }
+    public String getTaskTypes() { return get(tririgaUrl + "/oslc/spq/triTaskTypesQC"); }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Utilities
