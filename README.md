@@ -28,7 +28,7 @@ The LLM can interact with MREF using natural language - no need to know OSLC syn
        │ MCP Protocol
        │
 ┌──────▼──────────────────────────────┐
-│   MREF OSLC MCP Server           │
+│   MREF OSLC MCP Server              │
 │   ├─ Tool Discovery (findShape)     │
 │   ├─ Schema Discovery (discover)    │
 │   ├─ Query Tools (query, search)    │
@@ -38,11 +38,11 @@ The LLM can interact with MREF using natural language - no need to know OSLC syn
        │ OSLC HTTP/REST
        │
 ┌──────▼──────────────────────────────┐
-│   IBM MREF Platform              │
+│   IBM MREF Platform                 │
 │   ├─ Work Management                │
 │   ├─ Space & Location               │
-│   ├─ Asset Management                │
-│   └─ Custom Applications             │
+│   ├─ Asset Management               │
+│   └─ Custom Applications            │
 └─────────────────────────────────────┘
 ```
 
