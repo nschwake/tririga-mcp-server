@@ -1,22 +1,22 @@
-# TRIRIGA OSLC MCP Server
+# MREF OSLC MCP Server
 
 > ⚠️ **Work in Progress** - This project is under active development. Testing is not yet complete. Use at your own risk in production environments.
 
-A Model Context Protocol (MCP) server that provides AI assistants like Claude with direct access to IBM TRIRIGA's OSLC (Open Services for Lifecycle Collaboration) API, enabling intelligent facility management, work order creation, asset tracking, and location management through natural language.
+A Model Context Protocol (MCP) server that provides AI assistants like Claude with direct access to IBM MREF's OSLC (Open Services for Lifecycle Collaboration) API, enabling intelligent facility management, work order creation, asset tracking, and location management through natural language.
 
 ## 🎯 What It Does
 
-This MCP server exposes TRIRIGA's OSLC API as a collection of tools that Large Language Models can use to:
+This MCP server exposes MREF's OSLC API as a collection of tools that Large Language Models can use to:
 
-- **Query Resources**: Search for work tasks, locations, assets, people, and other TRIRIGA records
+- **Query Resources**: Search for work tasks, locations, assets, people, and other MREF records
 - **Create Records**: Generate work orders, tasks, and other records with proper workflow actions
 - **Update Records**: Modify existing records with state transitions and field updates
 - **Discover Schema**: Dynamically explore available resource types, fields, and capabilities
-- **Execute Workflows**: Trigger TRIRIGA workflow actions like "Create Draft", "Complete", "Retire"
+- **Execute Workflows**: Trigger MREF workflow actions like "Create Draft", "Complete", "Retire"
 - **Manage Locations**: Search buildings, floors, spaces, and navigate location hierarchies
 - **Track Assets**: Query and manage equipment, devices, and physical assets
 
-The LLM can interact with TRIRIGA using natural language - no need to know OSLC syntax, TRIRIGA internals, or API details.
+The LLM can interact with MREF using natural language - no need to know OSLC syntax, MREF internals, or API details.
 
 ## 🏗️ Architecture
 
@@ -28,7 +28,7 @@ The LLM can interact with TRIRIGA using natural language - no need to know OSLC 
        │ MCP Protocol
        │
 ┌──────▼──────────────────────────────┐
-│   TRIRIGA OSLC MCP Server           │
+│   MREF OSLC MCP Server           │
 │   ├─ Tool Discovery (findShape)     │
 │   ├─ Schema Discovery (discover)    │
 │   ├─ Query Tools (query, search)    │
@@ -38,7 +38,7 @@ The LLM can interact with TRIRIGA using natural language - no need to know OSLC 
        │ OSLC HTTP/REST
        │
 ┌──────▼──────────────────────────────┐
-│   IBM TRIRIGA Platform              │
+│   IBM MREF Platform              │
 │   ├─ Work Management                │
 │   ├─ Space & Location               │
 │   ├─ Asset Management                │
@@ -51,8 +51,8 @@ The LLM can interact with TRIRIGA using natural language - no need to know OSLC 
 ### 🔍 **Smart Discovery**
 - Automatically catalogs all OSLC service providers and resource shapes
 - Discovers query capabilities, creation factories, and available fields
-- Handles both built-in and custom TRIRIGA resources
-- No hardcoded assumptions - adapts to any TRIRIGA configuration
+- Handles both built-in and custom MREF resources
+- No hardcoded assumptions - adapts to any MREF configuration
 
 ### 🎨 **Multiple Query Capabilities**
 Resources can have multiple specialized query endpoints (e.g., "Building Lookup", "Floor Lookup", "General Locations"). The server exposes all of them, letting the LLM choose the most appropriate one.
@@ -73,8 +73,8 @@ Resources can have multiple specialized query endpoints (e.g., "Building Lookup"
 ### 🧩 **OSLC Compliant**
 - Reads query capabilities from service catalog (not hardcoded patterns)
 - Reads creation factories from service catalog
-- Supports TRIRIGA's PATCH-via-POST update pattern
-- Handles TRIRIGA-specific conventions (LR suffix for inline children)
+- Supports MREF's PATCH-via-POST update pattern
+- Handles MREF-specific conventions (LR suffix for inline children)
 
 ## 🚀 Quick Start
 
@@ -82,31 +82,31 @@ Resources can have multiple specialized query endpoints (e.g., "Building Lookup"
 
 - Java 17 or higher
 - Maven 3.6+
-- Access to a TRIRIGA instance with OSLC enabled
-- TRIRIGA user credentials with appropriate permissions
+- Access to a MREF instance with OSLC enabled
+- MREF user credentials with appropriate permissions
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/tririga-oslc-mcp-server.git
-   cd tririga-oslc-mcp-server
+   git clone https://github.com/yourusername/MREF-oslc-mcp-server.git
+   cd MREF-oslc-mcp-server
    ```
 
-2. **Configure TRIRIGA connection**
+2. **Configure MREF connection**
    
    Set environment variables:
    ```bash
-   export TRIRIGA_URL=https://your-tririga-server.com
-   export TRIRIGA_USER=your-username
-   export TRIRIGA_PASS=your-password
+   export MREF_URL=https://your-MREF-server.com
+   export MREF_USER=your-username
+   export MREF_PASS=your-password
    ```
    
    Or create `application.properties`:
    ```properties
-   TRIRIGA_URL=https://your-tririga-server.com
-   TRIRIGA_USER=your-username
-   TRIRIGA_PASS=your-password
+   MREF_URL=https://your-MREF-server.com
+   MREF_USER=your-username
+   MREF_PASS=your-password
    ```
 
 3. **Build the project**
@@ -116,7 +116,7 @@ Resources can have multiple specialized query endpoints (e.g., "Building Lookup"
 
 4. **Run the server**
    ```bash
-   java -jar target/tririga-oslc-mcp-server.jar
+   java -jar target/MREF-oslc-mcp-server.jar
    ```
 
 The server will start on `http://localhost:8080` by default.
@@ -128,16 +128,16 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "tririga": {
+    "MREF": {
       "command": "java",
       "args": [
         "-jar",
-        "/path/to/tririga-oslc-mcp-server.jar"
+        "/path/to/MREF-oslc-mcp-server.jar"
       ],
       "env": {
-        "TRIRIGA_URL": "https://your-tririga-server.com",
-        "TRIRIGA_USER": "your-username",
-        "TRIRIGA_PASS": "your-password"
+        "MREF_URL": "https://your-MREF-server.com",
+        "MREF_USER": "your-username",
+        "MREF_PASS": "your-password"
       }
     }
   }
@@ -146,7 +146,7 @@ Add to your `claude_desktop_config.json`:
 
 ## 📚 Example Usage
 
-Once connected, you can interact with TRIRIGA through natural language:
+Once connected, you can interact with MREF through natural language:
 
 **Example 1: Create a Work Order**
 ```
@@ -209,10 +209,10 @@ The server provides 30+ tools organized into categories:
 - `lookupFloorsAndSpaces` - Search for floors and spaces
 
 ### CRUD Operations
-- `createResource` - Create any TRIRIGA record
+- `createResource` - Create any MREF record
 - `createWorkTask` - Convenience method for work tasks
 - `readResource` - Fetch full record details
-- `updateResource` - Update any TRIRIGA record
+- `updateResource` - Update any MREF record
 - `updateWorkTask` - Convenience method for work tasks
 - `deleteResource` - Delete a record
 
@@ -247,7 +247,7 @@ src/main/java/com/microsoft/mcp/sample/server/
 │   ├── OslcJsonBuilder.java          # JSON request builder
 │   └── OslcCreateResult.java         # Creation response
 └── service/
-    ├── TririgaOSLCService.java       # Main MCP service (30+ tools)
+    ├── MREFOSLCService.java       # Main MCP service (30+ tools)
     └── CalculatorService.java        # Example service (unused)
 ```
 
@@ -257,9 +257,9 @@ src/main/java/com/microsoft/mcp/sample/server/
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `TRIRIGA_URL` | TRIRIGA base URL | Yes | - |
-| `TRIRIGA_USER` | TRIRIGA username | Yes | - |
-| `TRIRIGA_PASS` | TRIRIGA password | Yes | - |
+| `MREF_URL` | MREF base URL | Yes | - |
+| `MREF_USER` | MREF username | Yes | - |
+| `MREF_PASS` | MREF password | Yes | - |
 
 ### Logging
 
@@ -358,12 +358,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Built with [Spring AI](https://spring.io/projects/spring-ai) for MCP server capabilities
 - Uses [Model Context Protocol](https://modelcontextprotocol.io/) for AI integration
-- Designed for [IBM TRIRIGA](https://www.ibm.com/products/tririga) facility management platform
+- Designed for [IBM MREF](https://www.ibm.com/products/MREF) facility management platform
 
 ## 📞 Support
 
-- **Issues**: Please report bugs and feature requests via [GitHub Issues](https://github.com/yourusername/tririga-oslc-mcp-server/issues)
-- **Discussions**: For questions and discussions, use [GitHub Discussions](https://github.com/yourusername/tririga-oslc-mcp-server/discussions)
+- **Issues**: Please report bugs and feature requests via [GitHub Issues](https://github.com/yourusername/MREF-oslc-mcp-server/issues)
+- **Discussions**: For questions and discussions, use [GitHub Discussions](https://github.com/yourusername/MREF-oslc-mcp-server/discussions)
 
 ## 🗺️ Roadmap
 
