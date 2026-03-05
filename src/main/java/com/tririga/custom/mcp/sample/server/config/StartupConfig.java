@@ -1,4 +1,4 @@
-package com.microsoft.mcp.sample.server.config;
+package com.tririga.custom.mcp.sample.server.config;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;

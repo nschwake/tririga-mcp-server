@@ -1,4 +1,4 @@
-package com.microsoft.mcp.sample.server.oslc;
+package com.tririga.custom.mcp.sample.server.oslc;
 
 /**
  * Metadata about a single OSLC resource shape discovered from the service catalog.

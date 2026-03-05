@@ -1,4 +1,4 @@
-package com.microsoft.mcp.sample.server.oslc;
+package com.tririga.custom.mcp.sample.server.oslc;
 
 /**
  * Wraps the result of an OSLC creation (POST) request.

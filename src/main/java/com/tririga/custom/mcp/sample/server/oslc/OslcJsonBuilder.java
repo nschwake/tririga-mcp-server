@@ -1,4 +1,4 @@
-package com.microsoft.mcp.sample.server.oslc;
+package com.tririga.custom.mcp.sample.server.oslc;
 
 import java.util.List;
 import java.util.Map;

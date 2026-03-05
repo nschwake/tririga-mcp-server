@@ -1,4 +1,4 @@
-package com.microsoft.mcp.sample.server.exception;
+package com.tririga.custom.mcp.sample.server.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

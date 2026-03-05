@@ -1,4 +1,4 @@
-package com.microsoft.mcp.sample.server.service;
+package com.tririga.custom.mcp.sample.server.service;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Service;

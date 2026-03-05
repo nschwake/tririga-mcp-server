@@ -1,14 +1,4 @@
-package com.microsoft.mcp.sample.server.service;
-
-import com.microsoft.mcp.sample.server.oslc.OslcCreateResult;
-import com.microsoft.mcp.sample.server.oslc.OslcJsonBuilder;
-import com.microsoft.mcp.sample.server.oslc.OslcJsonBuilder.InlineChild;
-import com.microsoft.mcp.sample.server.oslc.OslcJsonBuilder.ExistingRecord;
-import com.microsoft.mcp.sample.server.oslc.OslcProperty;
-import com.microsoft.mcp.sample.server.oslc.OslcServiceCatalog;
-import com.microsoft.mcp.sample.server.oslc.OslcShapeEntry;
-import com.microsoft.mcp.sample.server.oslc.OslcShape;
-import com.microsoft.mcp.sample.server.oslc.OslcResponseParser;
+package com.tririga.custom.mcp.sample.server.service;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -18,6 +8,17 @@ import java.io.ByteArrayInputStream;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
+
+import com.tririga.custom.mcp.sample.server.oslc.OslcCreateResult;
+import com.tririga.custom.mcp.sample.server.oslc.OslcJsonBuilder;
+import com.tririga.custom.mcp.sample.server.oslc.OslcProperty;
+import com.tririga.custom.mcp.sample.server.oslc.OslcResponseParser;
+import com.tririga.custom.mcp.sample.server.oslc.OslcServiceCatalog;
+import com.tririga.custom.mcp.sample.server.oslc.OslcShape;
+import com.tririga.custom.mcp.sample.server.oslc.OslcShapeEntry;
+import com.tririga.custom.mcp.sample.server.oslc.OslcJsonBuilder.ExistingRecord;
+import com.tririga.custom.mcp.sample.server.oslc.OslcJsonBuilder.InlineChild;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
