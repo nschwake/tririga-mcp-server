@@ -8,6 +8,7 @@ import com.microsoft.mcp.sample.server.oslc.OslcProperty;
 import com.microsoft.mcp.sample.server.oslc.OslcServiceCatalog;
 import com.microsoft.mcp.sample.server.oslc.OslcShapeEntry;
 import com.microsoft.mcp.sample.server.oslc.OslcShape;
+import com.microsoft.mcp.sample.server.oslc.OslcResponseParser;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -143,7 +144,43 @@ public class TririgaOSLCService {
                 return "Error: HTTP " + response.statusCode() + " - " + response.body();
             }
             
+            // Parse the XML response to remove redundant structure
+            String rawXml = response.body();
+            return OslcResponseParser.parse(rawXml);
+            
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Request interrupted for URL: {}", url, e);
+            return "Error: Request interrupted - " + e.getMessage();
+        } catch (IOException e) {
+            logger.error("I/O error for GET {}: {}", url, e.getMessage());
+            return "Error: Network error - " + e.getMessage();
+        }
+    }
+
+    /**
+     * Get raw XML response without parsing.
+     * Used internally for shape discovery and other cases where we need to parse XML ourselves.
+     */
+    private String getRaw(String url) {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization",     "Basic " + encodedAuth)
+                .header("OSLC-Core-Version", "2.0")
+                .header("Accept",            "application/rdf+xml")
+                .GET().build();
+        try {
+            HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            
+            if (response.statusCode() >= 400) {
+                logger.warn("HTTP {} error for GET {}: {}", 
+                    response.statusCode(), url, response.body());
+                return "Error: HTTP " + response.statusCode() + " - " + response.body();
+            }
+            
             return response.body();
+            
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error("Request interrupted for URL: {}", url, e);
@@ -273,7 +310,8 @@ public class TririgaOSLCService {
         return shapeCache.computeIfAbsent(fullUrl, url -> {
             try {
                 ensureCatalog();
-                return OslcShape.parse(url, get(url), catalog.getGlobalPrefixMap());
+                // Use getRaw() because we need to parse the XML ourselves
+                return OslcShape.parse(url, getRaw(url), catalog.getGlobalPrefixMap());
             } catch (Exception e) {
                 throw new RuntimeException("Failed to load shape " + url + ": " + e.getMessage(), e);
             }
@@ -290,7 +328,10 @@ public class TririgaOSLCService {
 
     private void ensureCatalog() {
         if (!catalog.isBuilt()) {
-            try { catalog.build(tririgaUrl + "/oslc/sp", this::get); }
+            try { 
+                // Use getRaw() because catalog needs to parse the XML itself
+                catalog.build(tririgaUrl + "/oslc/sp", this::getRaw); 
+            }
             catch (Exception e) {
                 throw new RuntimeException("Failed to build shape catalog: " + e.getMessage(), e);
             }
@@ -961,7 +1002,8 @@ public class TririgaOSLCService {
                 "Obtain from queryResource() results. Example: '147665710'.") String recordId) {
         try {
             String actionUrl = tririgaUrl + "/oslc/system/action/" + resourceName + "RS/" + recordId;
-            String xml = get(actionUrl);
+            // Use getRaw() because we need to parse the XML ourselves
+            String xml = getRaw(actionUrl);
 
             // Parse oslc:allowedValue elements from the RDF/XML response
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -978,12 +1020,12 @@ public class TririgaOSLCService {
 
             StringBuilder sb = new StringBuilder();
             sb.append("Available actions for ").append(resourceName)
-              .append(" record ").append(recordId).append(":");
+              .append(" record ").append(recordId).append(":\n");
             for (int i = 0; i < nodes.getLength(); i++) {
                 String action = nodes.item(i).getTextContent().trim();
-                if (!action.isBlank()) sb.append("  - ").append(action).append("");
+                if (!action.isBlank()) sb.append("  - ").append(action).append("\n");
             }
-            sb.append("Pass one of these action values to the action parameter of ");
+            sb.append("\nPass one of these action values to the action parameter of ");
             sb.append("updateResource() or updateWorkTask() to trigger a state transition.");
             return sb.toString();
         } catch (Exception e) {
