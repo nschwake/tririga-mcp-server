@@ -119,9 +119,95 @@ public class TririgaOSLCService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private String shapeUrl(String n)              { return tririgaUrl + "/oslc/shapes/" + n + "RS"; }
-    private String queryUrl(String n)              { return tririgaUrl + "/oslc/spq/"   + n + "QC"; }
     private String createUrl(String n)             { return tririgaUrl + "/oslc/so/"    + n + "CF"; }
     private String recordUrl(String n, String id)  { return tririgaUrl + "/oslc/so/"    + n + "RS/" + id; }
+    
+    /**
+     * Get all query URLs for a resource by looking them up in the catalog.
+     * A resource can have multiple query capabilities (e.g., triLocation has
+     * triLocationsQC, triBuildingLookupQC, triFloorandSpaceLookupQC).
+     * Returns a formatted list of all available query capabilities.
+     */
+    private String getAllQueryUrlsForResource(String resourceName) {
+        ensureCatalog();
+        
+        List<OslcShapeEntry> matches = new ArrayList<>();
+        for (OslcShapeEntry entry : catalog.all()) {
+            if (resourceName.equals(entry.getResourceName()) && entry.isQueryable()) {
+                matches.add(entry);
+            }
+        }
+        
+        if (matches.isEmpty()) {
+            throw new IllegalArgumentException(
+                "Resource '" + resourceName + "' has no query capabilities defined in TRIRIGA");
+        }
+        
+        // If only one query capability, return it directly
+        if (matches.size() == 1) {
+            return matches.get(0).getQueryUrl();
+        }
+        
+        // Multiple query capabilities - format for display
+        StringBuilder sb = new StringBuilder();
+        sb.append("Resource '").append(resourceName).append("' has ")
+          .append(matches.size()).append(" query capabilities:\n");
+        for (int i = 0; i < matches.size(); i++) {
+            OslcShapeEntry entry = matches.get(i);
+            sb.append("  ").append(i + 1).append(". ")
+              .append(entry.getCapabilityTitle()).append("\n")
+              .append("     URL: ").append(entry.getQueryUrl()).append("\n");
+        }
+        sb.append("\nUsing the first one: ").append(matches.get(0).getQueryUrl());
+        return matches.get(0).getQueryUrl();
+    }
+    
+    /**
+     * Get the query URL for a resource by looking it up in the catalog.
+     * If multiple query capabilities exist, returns the first one found.
+     * Use getAllQueryUrlsForResource() to see all available options.
+     */
+    private String queryUrlForResource(String resourceName) {
+        ensureCatalog();
+        
+        // Find the first queryable entry for this resource
+        for (OslcShapeEntry entry : catalog.all()) {
+            if (resourceName.equals(entry.getResourceName())) {
+                String queryUrl = entry.getQueryUrl();
+                if (queryUrl != null && !queryUrl.isBlank()) {
+                    return queryUrl;
+                }
+                // If no query URL found, throw exception
+                throw new IllegalArgumentException(
+                    "Resource '" + resourceName + "' has no query capability defined in TRIRIGA");
+            }
+        }
+        
+        throw new IllegalArgumentException(
+            "Resource '" + resourceName + "' not found in catalog. " +
+            "Call findShape() to discover available resources.");
+    }
+    
+    /**
+     * Find a query URL by searching for a capability title or usage.
+     * This handles specialized query capabilities that don't follow standard naming.
+     * Returns null if not found.
+     */
+    private String findQueryUrlByName(String queryName) {
+        ensureCatalog();
+        
+        // First, check if the full query URL path matches
+        for (OslcShapeEntry entry : catalog.all()) {
+            String queryUrl = entry.getQueryUrl();
+            if (queryUrl != null && queryUrl.contains(queryName)) {
+                return queryUrl;
+            }
+        }
+        
+        // If not found, construct the traditional URL pattern as fallback
+        // (this maintains backward compatibility with existing code)
+        return tririgaUrl + "/oslc/spq/" + queryName;
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  HTTP helpers
@@ -507,8 +593,30 @@ public class TririgaOSLCService {
             sb.append("Resource: ").append(resourceName).append("\n");
             sb.append("Shape title: ").append(shape.getTitle()).append("\n");
             sb.append("Describes type: ").append(shape.getDescribesType()).append("\n\n");
+            
             sb.append("── CRUD URLs ──\n");
-            sb.append("  Query:   ").append(queryUrl(resourceName)).append("\n");
+            
+            // Show all query capabilities for this resource
+            ensureCatalog();
+            List<OslcShapeEntry> queryCapabilities = new ArrayList<>();
+            for (OslcShapeEntry entry : catalog.all()) {
+                if (resourceName.equals(entry.getResourceName()) && entry.isQueryable()) {
+                    queryCapabilities.add(entry);
+                }
+            }
+            
+            if (queryCapabilities.isEmpty()) {
+                sb.append("  Query:   [NOT AVAILABLE]\n");
+            } else if (queryCapabilities.size() == 1) {
+                sb.append("  Query:   ").append(queryCapabilities.get(0).getQueryUrl()).append("\n");
+            } else {
+                sb.append("  Query Capabilities (").append(queryCapabilities.size()).append("):\n");
+                for (OslcShapeEntry entry : queryCapabilities) {
+                    sb.append("    - ").append(entry.getCapabilityTitle()).append("\n");
+                    sb.append("      URL: ").append(entry.getQueryUrl()).append("\n");
+                }
+            }
+            
             sb.append("  Create:  ").append(createUrl(resourceName)).append("\n");
             sb.append("  Read:    ").append(recordUrl(resourceName, "{id}")).append("\n");
             sb.append("  Update:  ").append(recordUrl(resourceName, "{id}")).append(" (POST + x-method-override: PATCH)\n");
@@ -555,7 +663,9 @@ public class TririgaOSLCService {
         "If the user gives a name with no field specified, try dcterms:title first. " +
         "Leave where blank and use pageSize=10 when exploring a resource for the first time. " +
         "Summarise results in plain language for the user, then offer to show full details. " +
-        "NEXT STEP: call readResource() if the user wants full detail on a specific result.")
+        "NEXT STEP: call readResource() if the user wants full detail on a specific result. " +
+        "NOTE: If a resource has multiple query capabilities (shown in discoverResource), " +
+        "this uses the first one found. Use queryByUrl() to use a specific query capability.")
     public String queryResource(
             @ToolParam(description = "Resource name from findShape() / discoverResource(). " +
                 "Examples: 'triWorkTask', 'triLocation', 'triPeople', 'cstCustomExample'.") String resourceName,
@@ -575,11 +685,41 @@ public class TririgaOSLCService {
                 try { size = Math.min(200, Integer.parseInt(pageSize.trim())); }
                 catch (NumberFormatException ignored) {}
             }
-            StringBuilder url = new StringBuilder(queryUrl(resourceName) + "?oslc.pageSize=" + size);
+            StringBuilder url = new StringBuilder(queryUrlForResource(resourceName) + "?oslc.pageSize=" + size);
             if (where  != null && !where.isBlank())  url.append("&oslc.where=").append(encode(where));
             if (select != null && !select.isBlank()) url.append("&oslc.select=").append(encode(select));
             return get(url.toString());
         } catch (Exception e) { return "Error querying '" + resourceName + "': " + e.getMessage(); }
+    }
+
+    @Tool(description =
+        "Query TRIRIGA using a specific query capability URL. " +
+        "Use this when a resource has multiple query capabilities and you want to use a specific one. " +
+        "For example, triLocation has 'Locations Query', 'Building Lookup', and 'Floor and Space Lookup'. " +
+        "Get the available query URLs from discoverResource() output. " +
+        "This tool allows you to choose which query capability to use based on your specific needs.")
+    public String queryByUrl(
+            @ToolParam(description = "Full query capability URL from discoverResource(). " +
+                "Example: 'http://host/oslc/spq/triBuildingLookupQC'") String queryUrl,
+            @ToolParam(description = "Optional OSLC filter. Leave blank to return all records.") String where,
+            @ToolParam(description = "Optional comma-separated field names to return. Blank = all.") String select,
+            @ToolParam(description = "Maximum records to return (default 50, max 200).") String pageSize) {
+        try {
+            String size = (pageSize != null && !pageSize.isBlank()) ? pageSize : "50";
+            int maxSize = Math.min(Integer.parseInt(size), 200);
+            
+            StringBuilder url = new StringBuilder(queryUrl + "?oslc.pageSize=" + maxSize);
+            if (where != null && !where.isBlank()) {
+                url.append("&oslc.where=").append(encode(where));
+            }
+            if (select != null && !select.isBlank()) {
+                url.append("&oslc.select=").append(encode(select));
+            }
+            
+            return get(url.toString());
+        } catch (Exception e) {
+            return "Error querying '" + queryUrl + "': " + e.getMessage();
+        }
     }
 
     @Tool(description =
@@ -809,7 +949,7 @@ public class TririgaOSLCService {
     public String queryMyAssignedWorkTasks(
             @ToolParam(description = "Optional additional OSLC filter, e.g. 'spi_wm:status=\"Active\"'. " +
                 "Leave blank to return all assigned tasks.") String where) {
-        return get(tririgaUrl + "/oslc/spq/triMyAssignedWorkTasksQC?oslc.pageSize=50"
+        return get(findQueryUrlByName("triMyAssignedWorkTasksQC") + "?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -819,7 +959,7 @@ public class TririgaOSLCService {
         "or 'tasks I raised'.")
     public String queryMyCreatedWorkTasks(
             @ToolParam(description = "Optional additional OSLC filter. Leave blank for all created tasks.") String where) {
-        return get(tririgaUrl + "/oslc/spq/triMyCreatedWorkTasksQC?oslc.pageSize=50"
+        return get(findQueryUrlByName("triMyCreatedWorkTasksQC") + "?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -829,7 +969,7 @@ public class TririgaOSLCService {
         "or 'my task history'.")
     public String queryMyCompletedWorkTasks(
             @ToolParam(description = "Optional additional OSLC filter. Leave blank for all completed tasks.") String where) {
-        return get(tririgaUrl + "/oslc/spq/triMyCompletedWorkTasksQC?oslc.pageSize=50"
+        return get(findQueryUrlByName("triMyCompletedWorkTasksQC") + "?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -841,7 +981,7 @@ public class TririgaOSLCService {
     public String searchWorkTasks(
             @ToolParam(description = "Keyword or phrase to search for across all work task fields. " +
                 "Examples: 'HVAC', 'roof leak', 'elevator inspection'.") String keyword) {
-        return get(tririgaUrl + "/oslc/spq/triWorkTaskSearchResultsQC?oslc.pageSize=50"
+        return get(findQueryUrlByName("triWorkTaskSearchResultsQC") + "?oslc.pageSize=50"
                 + "&oslc.searchTerms=" + encode(keyword));
     }
 
@@ -925,7 +1065,7 @@ public class TririgaOSLCService {
         "Use when the user provides an asset name, description, or barcode value.")
     public String lookupAssets(
             @ToolParam(description = "Asset name or barcode to search for. Example: 'Elevator 2B' or '00042391'.") String searchTerm) {
-        return get(tririgaUrl + "/oslc/spq/triAssetsLookupQC?oslc.pageSize=25"
+        return get(findQueryUrlByName("triAssetsLookupQC") + "?oslc.pageSize=25"
                 + "&oslc.searchTerms=" + encode(searchTerm));
     }
 
@@ -947,7 +1087,7 @@ public class TririgaOSLCService {
     public String lookupBuildings(
             @ToolParam(description = "Building name or partial name to search for. " +
                 "Leave blank to return all buildings. Example: 'North Tower'.") String searchTerm) {
-        return get(tririgaUrl + "/oslc/spq/triBuildingLookupQC?oslc.pageSize=25"
+        return get(findQueryUrlByName("triBuildingLookupQC") + "?oslc.pageSize=25"
                 + (searchTerm != null && !searchTerm.isBlank() ? "&oslc.searchTerms=" + encode(searchTerm) : ""));
     }
 
@@ -957,7 +1097,7 @@ public class TririgaOSLCService {
     public String lookupFloorsAndSpaces(
             @ToolParam(description = "Floor or space name to search for. " +
                 "Leave blank to return all. Example: 'Floor 3' or 'Conference Room B'.") String searchTerm) {
-        return get(tririgaUrl + "/oslc/spq/triFloorandSpaceLookupQC?oslc.pageSize=25"
+        return get(findQueryUrlByName("triFloorandSpaceLookupQC") + "?oslc.pageSize=25"
                 + (searchTerm != null && !searchTerm.isBlank() ? "&oslc.searchTerms=" + encode(searchTerm) : ""));
     }
 
@@ -967,7 +1107,7 @@ public class TririgaOSLCService {
     public String queryReservableSpaces(
             @ToolParam(description = "Optional OSLC filter to narrow results, e.g. by capacity or building. " +
                 "Leave blank to return all reservable spaces.") String where) {
-        return get(tririgaUrl + "/oslc/spq/triReservableSpaceQC?oslc.pageSize=50"
+        return get(findQueryUrlByName("triReservableSpaceQC") + "?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -976,7 +1116,7 @@ public class TririgaOSLCService {
         "Use when the user asks about existing room bookings, calendar reservations, or appointments.")
     public String queryExchangeAppointments(
             @ToolParam(description = "Optional OSLC filter. Leave blank to return all reservations.") String where) {
-        return get(tririgaUrl + "/oslc/spq/triExchangeAppointmentQC?oslc.pageSize=50"
+        return get(findQueryUrlByName("triExchangeAppointmentQC") + "?oslc.pageSize=50"
                 + (where != null && !where.isBlank() ? "&oslc.where=" + encode(where) : ""));
     }
 
@@ -1038,20 +1178,26 @@ public class TririgaOSLCService {
         "(e.g. Draft, Active, On Hold, Completed, Retired). " +
         "Use when filtering work tasks by status in a where clause, " +
         "or when the user asks what statuses are possible.")
-    public String getWorkTaskStatuses() { return get(tririgaUrl + "/oslc/spq/triStatusesQC"); }
+    public String getWorkTaskStatuses() { 
+        return get(findQueryUrlByName("triStatusesQC")); 
+    }
 
     @Tool(description =
         "Returns all valid Priority records with their names and resource URLs. " +
         "Use when the user specifies a priority level for a work task and you need " +
         "the resource URL to pass as a linked field in createResource() or updateResource().")
-    public String getPriorities() { return get(tririgaUrl + "/oslc/spq/triPrioritiesQC"); }
+    public String getPriorities() { 
+        return get(findQueryUrlByName("triPrioritiesQC")); 
+    }
 
     @Tool(description =
         "Returns all valid Task Type records (e.g. Corrective, Preventive, Inspection) " +
         "with their names and resource URLs. " +
         "Use when the user specifies a task type and you need to confirm it is valid, " +
         "or to get the resource URL for a linked field in createResource() or updateResource().")
-    public String getTaskTypes() { return get(tririgaUrl + "/oslc/spq/triTaskTypesQC"); }
+    public String getTaskTypes() { 
+        return get(findQueryUrlByName("triTaskTypesQC")); 
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Utilities
