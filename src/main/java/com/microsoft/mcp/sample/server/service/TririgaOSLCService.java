@@ -119,8 +119,41 @@ public class TririgaOSLCService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private String shapeUrl(String n)              { return tririgaUrl + "/oslc/shapes/" + n + "RS"; }
-    private String createUrl(String n)             { return tririgaUrl + "/oslc/so/"    + n + "CF"; }
     private String recordUrl(String n, String id)  { return tririgaUrl + "/oslc/so/"    + n + "RS/" + id; }
+    
+    /**
+     * Get the creation factory URL for a resource by looking it up in the catalog.
+     * Like query capabilities, creation factory URLs should come from the catalog
+     * rather than being assumed to follow a pattern.
+     */
+    private String createUrlForResource(String resourceName) {
+        ensureCatalog();
+        
+        // Find the first creatable entry for this resource
+        for (OslcShapeEntry entry : catalog.all()) {
+            if (resourceName.equals(entry.getResourceName())) {
+                String createUrl = entry.getCreationUrl();
+                if (createUrl != null && !createUrl.isBlank()) {
+                    return createUrl;
+                }
+                // If no creation URL found, fall back to standard pattern
+                logger.warn("Resource '{}' has no creation factory in catalog, using standard pattern", resourceName);
+                return tririgaUrl + "/oslc/so/" + resourceName + "CF";
+            }
+        }
+        
+        // Not in catalog - fall back to standard pattern
+        logger.warn("Resource '{}' not found in catalog, using standard creation pattern", resourceName);
+        return tririgaUrl + "/oslc/so/" + resourceName + "CF";
+    }
+    
+    /**
+     * @deprecated Use createUrlForResource() instead to get URL from catalog
+     */
+    @Deprecated
+    private String createUrl(String n) { 
+        return tririgaUrl + "/oslc/so/" + n + "CF"; 
+    }
     
     /**
      * Get all query URLs for a resource by looking them up in the catalog.
@@ -617,7 +650,7 @@ public class TririgaOSLCService {
                 }
             }
             
-            sb.append("  Create:  ").append(createUrl(resourceName)).append("\n");
+            sb.append("  Create:  ").append(createUrlForResource(resourceName)).append("\n");
             sb.append("  Read:    ").append(recordUrl(resourceName, "{id}")).append("\n");
             sb.append("  Update:  ").append(recordUrl(resourceName, "{id}")).append(" (POST + x-method-override: PATCH)\n");
             sb.append("  Delete:  ").append(recordUrl(resourceName, "{id}")).append(" (DELETE)\n\n");
@@ -839,7 +872,7 @@ public class TririgaOSLCService {
             String json = OslcJsonBuilder.build(shape, literalFields, action,
                     children.isEmpty() ? null : children,
                     links.isEmpty()    ? null : links);
-            OslcCreateResult result = post(createUrl(resourceName), json, transactionId);
+            OslcCreateResult result = post(createUrlForResource(resourceName), json, transactionId);
             return result.toString();
         } catch (Exception e) { return "Error creating '" + resourceName + "': " + e.getMessage(); }
     }
@@ -1013,7 +1046,7 @@ public class TririgaOSLCService {
             fields.put("triTaskTypeCL", taskType);
             fields.entrySet().removeIf(e -> e.getValue() == null || e.getValue().isBlank());
             String json = OslcJsonBuilder.build(shape, fields, action);
-            return post(createUrl("triWorkTask"), json, transactionId).toString();
+            return post(createUrlForResource("triWorkTask"), json, transactionId).toString();
         } catch (Exception e) { return "Error: " + e.getMessage(); }
     }
 
