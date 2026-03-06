@@ -6,6 +6,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
+import com.tririga.custom.mcp.sample.server.service.TririgaAdminAPIQueryTools;
 import com.tririga.custom.mcp.sample.server.service.TririgaOSLCService;
 
 @SpringBootApplication
@@ -23,5 +24,10 @@ public class McpServerApplication {
     @Bean
     public ToolCallbackProvider tririgaOSLCTools(TririgaOSLCService tririgaOSLC) {
         return MethodToolCallbackProvider.builder().toolObjects(tririgaOSLC).build();
+    }
+
+    @Bean
+    public ToolCallbackProvider tririgaQueryTools(TririgaAdminAPIQueryTools tririgaAdminAPIQuery) {
+        return MethodToolCallbackProvider.builder().toolObjects(tririgaAdminAPIQuery).build();
     }
 }
