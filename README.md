@@ -89,8 +89,8 @@ Resources can have multiple specialized query endpoints (e.g., "Building Lookup"
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/MREF-oslc-mcp-server.git
-   cd MREF-oslc-mcp-server
+   git clone https://github.com/yourusername/tririga-mcp-server.git
+   cd tririga-mcp-server
    ```
 
 2. **Configure MREF connection**
@@ -116,7 +116,7 @@ Resources can have multiple specialized query endpoints (e.g., "Building Lookup"
 
 4. **Run the server**
    ```bash
-   java -jar target/MREF-oslc-mcp-server.jar
+   java -jar target/tririga-mcp-server.jar
    ```
 
 The server will start on `http://localhost:8080` by default.
@@ -132,7 +132,7 @@ Add to your `claude_desktop_config.json`:
       "command": "java",
       "args": [
         "-jar",
-        "/path/to/MREF-oslc-mcp-server.jar"
+        "/path/to/tririga-mcp-server.jar"
       ],
       "env": {
         "MREF_URL": "https://your-MREF-server.com",
@@ -362,8 +362,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: Please report bugs and feature requests via [GitHub Issues](https://github.com/yourusername/MREF-oslc-mcp-server/issues)
-- **Discussions**: For questions and discussions, use [GitHub Discussions](https://github.com/yourusername/MREF-oslc-mcp-server/discussions)
+- **Issues**: Please report bugs and feature requests via [GitHub Issues](https://github.com/nschwake/tririga-mcp-server/issues)
+- **Discussions**: For questions and discussions, use [GitHub Discussions](https://github.com/nschwake/tririga-mcp-server/discussions)
 
 ## 🗺️ Roadmap
 

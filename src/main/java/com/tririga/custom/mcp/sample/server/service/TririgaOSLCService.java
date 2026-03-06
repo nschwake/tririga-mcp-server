@@ -43,13 +43,13 @@ public class TririgaOSLCService {
     private static final Logger logger = LoggerFactory.getLogger(TririgaOSLCService.class);
 
     // ─── Configuration ───────────────────────────────────────────────────────
-    @Value("${TRIRIGA_URL:#{null}}")
+    @Value("${MREF_URL:#{null}}")
     private String tririgaUrl;
 
-    @Value("${TRIRIGA_USER:#{null}}")
+    @Value("${MREF_USER:#{null}}")
     private String tririgaUser;
 
-    @Value("${TRIRIGA_PASS:#{null}}")
+    @Value("${MREF_PASS:#{null}}")
     private String tririgaPass;
 
     private String encodedAuth;
@@ -82,24 +82,24 @@ public class TririgaOSLCService {
     private void init() {
         // Fallback to environment variables if Spring properties not set
         if (tririgaUrl == null) {
-            tririgaUrl = System.getenv("TRIRIGA_URL");
+            tririgaUrl = System.getenv("MREF_URL");
         }
         if (tririgaUser == null) {
-            tririgaUser = System.getenv("TRIRIGA_USER");
+            tririgaUser = System.getenv("MREF_USER");
         }
         if (tririgaPass == null) {
-            tririgaPass = System.getenv("TRIRIGA_PASS");
+            tririgaPass = System.getenv("MREF_PASS");
         }
 
         // Validate configuration
         if (tririgaUrl == null || tririgaUrl.isBlank()) {
-            throw new IllegalStateException("TRIRIGA_URL is not configured");
+            throw new IllegalStateException("MREF_URL is not configured");
         }
         if (tririgaUser == null || tririgaUser.isBlank()) {
-            throw new IllegalStateException("TRIRIGA_USER is not configured");
+            throw new IllegalStateException("MREF_USER is not configured");
         }
         if (tririgaPass == null || tririgaPass.isBlank()) {
-            throw new IllegalStateException("TRIRIGA_PASS is not configured");
+            throw new IllegalStateException("MREF_PASS is not configured");
         }
 
         // Pre-encode authentication (only once)
