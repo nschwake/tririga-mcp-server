@@ -25,12 +25,14 @@ public class TririgaDatabaseService {
     
     private final HttpClient httpClient;
     private final TririgaApiConfig config;
+    private final TririgaSessionManager sessionManager;
     private final ObjectMapper objectMapper;
     private static final String RUN_QUERY_ENDPOINT = "/api/v1/admin/databaseQuery/run";
     
-    public TririgaDatabaseService(HttpClient httpClient, TririgaApiConfig config) {
+    public TririgaDatabaseService(HttpClient httpClient, TririgaApiConfig config, TririgaSessionManager sessionManager) {
         this.httpClient = httpClient;
         this.config = config;
+        this.sessionManager = sessionManager;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -47,10 +49,13 @@ public class TririgaDatabaseService {
             String requestBody = objectMapper.writeValueAsString(request);
             String url = config.getTririgaUrl() + RUN_QUERY_ENDPOINT;
 
+            // Get session cookie from session manager
+            String sessionCookie = sessionManager.getSessionCookie();
+
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Basic " + config.getEncodedAuth())
+                    .header("Cookie", sessionCookie)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
                     .build();
 
@@ -61,6 +66,31 @@ public class TririgaDatabaseService {
                 log.info("Query executed successfully. Retrieved {} rows", 
                         queryResponse.getResults() != null ? queryResponse.getResults().size() : 0);
                 return queryResponse;
+            } else if (response.statusCode() == 401) {
+                // Session expired, refresh and retry once
+                log.warn("Session expired (401), refreshing session and retrying");
+                sessionCookie = sessionManager.refreshSession();
+                
+                // Retry with new session
+                httpRequest = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Content-Type", "application/json")
+                        .header("Cookie", sessionCookie)
+                        .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                        .build();
+                
+                response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() == 200) {
+                    DatabaseQueryResponse queryResponse = objectMapper.readValue(response.body(), DatabaseQueryResponse.class);
+                    log.info("Query executed successfully after session refresh. Retrieved {} rows", 
+                            queryResponse.getResults() != null ? queryResponse.getResults().size() : 0);
+                    return queryResponse;
+                } else {
+                    log.error("Query failed after session refresh. Status: {}", response.statusCode());
+                    throw new RuntimeException("Failed to execute query after retry. Status: " + response.statusCode() + 
+                                             ", Body: " + response.body());
+                }
             } else {
                 log.error("Unexpected response status: {}", response.statusCode());
                 throw new RuntimeException("Failed to execute query. Status: " + response.statusCode() + 
