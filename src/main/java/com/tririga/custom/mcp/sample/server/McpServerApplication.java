@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 
 import com.tririga.custom.mcp.sample.server.service.TririgaAdminAPIQueryTools;
 import com.tririga.custom.mcp.sample.server.service.TririgaOSLCService;
+import com.tririga.custom.mcp.sample.server.service.TririgaWFDevelopmentService;
 
 @SpringBootApplication
 public class McpServerApplication {
@@ -29,5 +30,10 @@ public class McpServerApplication {
     @Bean
     public ToolCallbackProvider tririgaQueryTools(TririgaAdminAPIQueryTools tririgaAdminAPIQuery) {
         return MethodToolCallbackProvider.builder().toolObjects(tririgaAdminAPIQuery).build();
+    }
+
+    @Bean
+    public ToolCallbackProvider tririgaWFDevTools(TririgaWFDevelopmentService tririgaWFDev) {
+        return MethodToolCallbackProvider.builder().toolObjects(tririgaWFDev).build();
     }
 }

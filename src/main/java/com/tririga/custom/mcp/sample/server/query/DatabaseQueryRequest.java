@@ -17,7 +17,7 @@ public class DatabaseQueryRequest {
 
 
     @JsonProperty("limit")
-    private Integer limit = 100;
+    private Integer limit = 1000000000;
 
     public DatabaseQueryRequest() {
     }
@@ -69,7 +69,7 @@ public class DatabaseQueryRequest {
         private String scriptName;
         private String description;
         private String sqlQuery;
-        private Integer limit = 100;
+        private Integer limit = 1000000000;
 
         public Builder scriptName(String scriptName) {
             this.scriptName = scriptName;

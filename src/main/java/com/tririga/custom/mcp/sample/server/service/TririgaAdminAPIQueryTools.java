@@ -29,8 +29,9 @@ public class TririgaAdminAPIQueryTools {
         "Use this to query tables like T_triPeople, license_metric, or any TRIRIGA table.")
     public List<Map<String, Object>> queryTririgaDatabase(
             @ToolParam(description = "The SQL query to execute") String sqlQuery,
-            @ToolParam(description = "Name for the query script (optional)") String scriptName,
-            @ToolParam(description = "Maximum number of results (optional, default: 10)") Integer limit
+            // The script name must exist in the Tririga server. The SQL is overridden by the call from the MCP server.
+            @ToolParam(description = "Name for the query script (required - must be 'mcp-run-simple-query')") String scriptName,
+            @ToolParam(description = "Maximum number of results (perfer not to use a limit)") Integer limit
     ) {
         log.info("MCP Tool: Executing TRIRIGA query - {}", scriptName);
         

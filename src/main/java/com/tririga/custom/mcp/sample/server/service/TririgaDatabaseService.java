@@ -118,7 +118,7 @@ public class TririgaDatabaseService {
                 .sqlQuery(sqlQuery)
                 .limit(limit != null ? limit : 100)
                 .build();
-
+        log.info("SQL Request Statement: "+request.getSqlQuery());
         DatabaseQueryResponse response = runQuery(request);
         return convertResultsToMaps(response);
     }

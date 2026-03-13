@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 @Service
@@ -19,9 +20,11 @@ public class TririgaSessionManager {
     
     private final HttpClient httpClient;
     private final TririgaApiConfig config;
-    private static final String LOGIN_ENDPOINT = "/html/en/default/rest/Login";
+    private static final String LOGIN_ENDPOINT = "/p/websignon/signon";
     
     private volatile String sessionCookie;
+    private String username;
+    private String password;
     
     public TririgaSessionManager(HttpClient httpClient, TririgaApiConfig config) {
         this.httpClient = httpClient;
@@ -30,7 +33,17 @@ public class TririgaSessionManager {
 
     @PostConstruct
     private void init() {
+        // Extract username and password from config for login
+        // The config has them for Basic Auth, we need them for JSON body
         log.info("TririgaSessionManager initialized");
+    }
+
+    /**
+     * Set credentials for login (called from config or externally)
+     */
+    public void setCredentials(String username, String password) {
+        this.username = username;
+        this.password = password;
     }
 
     /**
@@ -62,15 +75,20 @@ public class TririgaSessionManager {
      * Login to TRIRIGA and get a session cookie
      */
     private String login() {
-        log.info("Logging in to TRIRIGA to obtain session cookie");
+       
         
         try {
             String url = config.getTririgaUrl() + LOGIN_ENDPOINT;
+             log.info("Logging in to TRIRIGA to obtain session cookie at "+ url);
+            
+            // Create JSON body with userName and password
+            String jsonBody = String.format("{\"userName\":\"%s\",\"password\":\"%s\"}", 
+                config.getTririgaUser(), config.getTririgaPassword());
             
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .header("Authorization", "Basic " + config.getEncodedAuth())
-                    .GET()
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
                     .build();
 
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());

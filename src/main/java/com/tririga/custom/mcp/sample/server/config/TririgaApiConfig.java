@@ -72,4 +72,12 @@ public class TririgaApiConfig {
     public String getEncodedAuth() {
         return encodedAuth;
     }
+
+    public String getTririgaUser() {
+        return tririgaUser;
+    }
+
+    public String getTririgaPassword() {
+        return tririgaPass;
+    }
 }
