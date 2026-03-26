@@ -1,4 +1,4 @@
-package com.tririga.custom.mcp.sample.server.query;
+package com.tririga.custom.mcp.sample.server.model.query;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

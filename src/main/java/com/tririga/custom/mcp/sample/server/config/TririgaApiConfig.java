@@ -25,6 +25,18 @@ public class TririgaApiConfig {
     @Value("${tririga.api.timeout:30}")
     private int timeoutSeconds;
 
+    public void setTririgaUrl(String tririgaUrl) {
+        this.tririgaUrl = tririgaUrl;
+    }
+
+    public void setTririgaUser(String tririgaUser) {
+        this.tririgaUser = tririgaUser;
+    }
+
+    public void setTririgaPass(String tririgaPass) {
+        this.tririgaPass = tririgaPass;
+    }
+
     private String encodedAuth;
 
     @PostConstruct
@@ -40,6 +52,7 @@ public class TririgaApiConfig {
             tririgaPass = System.getenv("MREF_PASS");
         }
 
+        
         // Validate configuration
         if (tririgaUrl == null || tririgaUrl.isBlank()) {
             throw new IllegalStateException("MREF_URL is not configured");

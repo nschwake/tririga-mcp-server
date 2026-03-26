@@ -84,6 +84,7 @@ public class TririgaSessionManager {
             // Create JSON body with userName and password
             String jsonBody = String.format("{\"userName\":\"%s\",\"password\":\"%s\"}", 
                 config.getTririgaUser(), config.getTririgaPassword());
+            //  log.info("Sending JSON Body: "+ jsonBody);
             
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))

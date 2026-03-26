@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 
 import com.tririga.custom.mcp.sample.server.service.TririgaAdminAPIQueryTools;
 import com.tririga.custom.mcp.sample.server.service.TririgaOSLCService;
-import com.tririga.custom.mcp.sample.server.service.TririgaWFDevelopmentService;
+import com.tririga.custom.mcp.sample.server.service.TririgaWFAnalysisService;
 
 @SpringBootApplication
 public class McpServerApplication {
@@ -33,7 +33,7 @@ public class McpServerApplication {
     }
 
     @Bean
-    public ToolCallbackProvider tririgaWFDevTools(TririgaWFDevelopmentService tririgaWFDev) {
+    public ToolCallbackProvider tririgaWFDevTools(TririgaWFAnalysisService tririgaWFDev) {
         return MethodToolCallbackProvider.builder().toolObjects(tririgaWFDev).build();
     }
 }

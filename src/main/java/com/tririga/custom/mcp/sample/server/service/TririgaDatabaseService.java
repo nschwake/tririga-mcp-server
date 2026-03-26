@@ -1,8 +1,8 @@
 package com.tririga.custom.mcp.sample.server.service;
 
 import com.tririga.custom.mcp.sample.server.config.TririgaApiConfig;
-import com.tririga.custom.mcp.sample.server.query.DatabaseQueryRequest;
-import com.tririga.custom.mcp.sample.server.query.DatabaseQueryResponse;
+import com.tririga.custom.mcp.sample.server.model.query.DatabaseQueryRequest;
+import com.tririga.custom.mcp.sample.server.model.query.DatabaseQueryResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
