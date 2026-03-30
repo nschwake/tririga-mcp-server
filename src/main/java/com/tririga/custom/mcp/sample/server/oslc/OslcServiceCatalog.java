@@ -8,7 +8,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Crawls all TRIRIGA OSLC service providers and builds a flat, searchable

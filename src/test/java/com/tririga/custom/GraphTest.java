@@ -1,12 +1,9 @@
 package com.tririga.custom;
 
-import org.jgrapht.graph.DefaultEdge;
-import org.jgrapht.graph.DirectedAcyclicGraph;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.tririga.custom.mcp.sample.server.config.TririgaApiConfig;
-import com.tririga.custom.mcp.sample.server.model.WorkflowTracingStep;
 import com.tririga.custom.mcp.sample.server.service.TririgaDatabaseService;
 import com.tririga.custom.mcp.sample.server.service.TririgaSessionManager;
 import com.tririga.custom.mcp.sample.server.service.TririgaWFAnalysisService;
