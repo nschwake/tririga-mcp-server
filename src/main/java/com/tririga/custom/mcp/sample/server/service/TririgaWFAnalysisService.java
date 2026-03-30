@@ -35,8 +35,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
@@ -172,11 +172,11 @@ public class TririgaWFAnalysisService {
                 WHERE t.WF_TEMPLATE_ID = """
                 + wfID +
                 """
-                        AND t.WF_TEMPLATE_VERSION = (
-                            SELECT MAX(WF_TEMPLATE_VERSION)
-                            FROM WF_TEMPLATE
-                            WHERE WF_TEMPLATE_ID = t.WF_TEMPLATE_ID)
-                        ORDER BY t.WF_TEMPLATE_ID, t.WF_TEMPLATE_VERSION, ts.STEP_ID """;
+                 AND t.WF_TEMPLATE_VERSION = (
+                    SELECT MAX(WF_TEMPLATE_VERSION)
+                    FROM WF_TEMPLATE
+                    WHERE WF_TEMPLATE_ID = t.WF_TEMPLATE_ID)
+                ORDER BY t.WF_TEMPLATE_ID, t.WF_TEMPLATE_VERSION, ts.STEP_ID """;
         log.info("MCP Tool: Fetching TRIRIGA Workflow templates, limit: {}", limit, sqlQuery);
         return databaseService.runSimpleQuery(
                 "mcp-run-simple-query",
@@ -746,10 +746,12 @@ public class TririgaWFAnalysisService {
             Type = 14 will also contain the expression used for the switch.
             Type = 38 will also contain the name of workflow being called.
 
+            Use the 'getWorkflowTraceTypeSets' tool to get a list of valid set names.
+
             """)
-    public DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> generateWorkflowTrace(
+    public String generateWorkflowTrace(
             @McpToolParam(description = "The workflow name", required = true) String workflowName,
-            @McpToolParam(description = "Set of types to return in the DAG, defaults to ALL. Another common option is WF_CALL_FLOW, this option will return only Start, Switch, and Call Workflow tasks.", required = false) String... outputDetails) {
+            @McpToolParam(description = "Set of workflow task types to return in the DAG, defaults to 'ALL' is no parameter entered. Another common option is WF_CALL_FLOW, this option will return only Start, Switch, and Call Workflow tasks.", required = false) String... outputDetails) {
 
         DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> workflowMap = generateDAGForWorkflow(workflowName, null);
         String setName = (outputDetails.length > 0) ? outputDetails[0] : "ALL";
@@ -757,7 +759,7 @@ public class TririgaWFAnalysisService {
         if (setName != "ALL") {
             // 1. Define your "Safe" types
             Set<Integer> keepTypes = DagTypeSets.getIdListByLabel(setName).stream().collect(Collectors.toSet());
-            if(keepTypes ==null || keepTypes.size()<1){ return workflowMap;}
+            if(keepTypes ==null || keepTypes.size()<1){ return "no types defined";}
 
             // 2. Identify all nodes that are NOT in your whitelist
             List<WorkflowTracingStep> nodesToBridge = workflowMap.vertexSet().stream()
@@ -770,12 +772,12 @@ public class TririgaWFAnalysisService {
             }
         }
 
-        return workflowMap;
+        return workflowMap.toString();
     }
 @McpTool(name = "generateCustomWorkflowTrace", description = """
             Creates a Directed Analytic Graph of workflow calls.
             By default the tool returns all nodes/tasks in a workflow. However, an optional parameter can be used to only return a graph that contains the task types equal to the passed
-            in IDs. Example: generateCustomWorkflowTrace('triServiceAgreementLineItem - Synchronous - triUploadHidden', '1','14','38') 
+            in IDs. Example: generateCustomWorkflowTrace('triServiceAgreementLineItem - Synchronous - triUploadHidden', "1","14","38") 
 
             Each node in the DAG contains information in the following format:
             "hashCode()+\": \"+wfName+\" \"+\"'\"+taskLabel+\"'\"+\" \"+type+\" \"+workflowStepID+\" \"+parentWorkflowStepID+\" \"+parentHashCode();"
@@ -784,9 +786,9 @@ public class TririgaWFAnalysisService {
             Type = 38 will also contain the name of workflow being called.
 
             """)
-     public DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> generateCustomWorkflowTrace(
+     public String generateCustomWorkflowTrace(
             @McpToolParam(description = "The workflow name", required = true) String workflowName,
-            @McpToolParam(description = "A string of task type IDs separated by commas. example: 1,14,38", required = false) String... outputDetails) {
+            @McpToolParam(description = "A string of task type IDs separated by commas. example: \"1\",\"14\",\"38\" ", required = false) String... outputDetails) {
 
         DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> workflowMap = generateDAGForWorkflow(workflowName, null);
     
@@ -796,7 +798,7 @@ public class TririgaWFAnalysisService {
             Set<Integer> keepTypes = Arrays.stream(outputDetails)
                 .map(Integer::parseInt)
                 .collect(Collectors.toSet());
-            if(keepTypes ==null || keepTypes.size()<1){ return workflowMap;}
+            if(keepTypes ==null || keepTypes.size()<1){ return "no types defined";}
 
             // 2. Identify all nodes that are NOT in your whitelist
             List<WorkflowTracingStep> nodesToBridge = workflowMap.vertexSet().stream()
@@ -809,7 +811,7 @@ public class TririgaWFAnalysisService {
             }
         }
 
-        return workflowMap;
+        return workflowMap.toString();
     }
 
     public DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> generateDAGForWorkflow(
@@ -865,6 +867,20 @@ public class TririgaWFAnalysisService {
         return workflowMap;
 
     }
+
+    @McpTool(name = "getWorkflowTraceTypeSets", description = """
+            Returns a list of pre-defined sets of task types to use for 'generateWFTrace' tool.
+
+            """)
+     public List<String> generateCustomWorkflowTrace(){
+
+        List<String> setNames = Stream.of(DagTypeSets.values())
+                           .map(DagTypeSets::getLabel)
+                           .collect(Collectors.toList());
+
+        return setNames;
+    
+            }
 
     public List<WorkflowTracingStep> getDAGWorkflowTasksFromName(String workflowName) {
         String sqlQuery = """

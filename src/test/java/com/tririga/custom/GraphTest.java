@@ -64,18 +64,21 @@ public class GraphTest {
         TririgaWFAnalysisService wfAService = new TririgaWFAnalysisService(databaseService);
 
 
-        DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> dag = wfAService.generateWorkflowTrace("triWorkTask - Synchronous -  triRevise");
+        // DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> dag = wfAService.generateWorkflowTrace("triWorkTask - Synchronous -  triRevise");
+        String dag = wfAService.generateWorkflowTrace("triWorkTask - Synchronous -  triRevise");
         assertNotNull(dag);
-        System.out.println("Returning DAG with: "+dag.vertexSet().size()+ " elements:");
-        System.out.println(dag.toString());
-         DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> dag2 = wfAService.generateWorkflowTrace("triWorkTask - Synchronous -  triRevise","WF_CALL_FLOW");
+        // System.out.println("Returning DAG with: "+dag.vertexSet().size()+ " elements:");
+        System.out.println(dag);
+        //  DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> dag2 = wfAService.generateWorkflowTrace("triWorkTask - Synchronous -  triRevise","WF_CALL_FLOW");
+        String dag2 = wfAService.generateWorkflowTrace("triWorkTask - Synchronous -  triRevise","WF_CALL_FLOW");
         assertNotNull(dag2);
-        System.out.println("Returning DAG with: "+dag2.vertexSet().size()+ " elements:");
-        System.out.println(dag2.toString());
-        DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> dag3 = wfAService.generateCustomWorkflowTrace("triWorkTask - Synchronous -  triRevise","1","28","9");
+        // System.out.println("Returning DAG with: "+dag2.vertexSet().size()+ " elements:");
+        System.out.println(dag2);
+        // DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> dag3 = wfAService.generateCustomWorkflowTrace("triWorkTask - Synchronous -  triRevise","1","28","9");
+        String  dag3 = wfAService.generateCustomWorkflowTrace("triWorkTask - Synchronous -  triRevise","1","28","9");
         assertNotNull(dag3);
-        System.out.println("Returning DAG with: "+dag3.vertexSet().size()+ " elements:");
-        System.out.println(dag3.toString());
+        // System.out.println("Returning DAG with: "+dag3.vertexSet().size()+ " elements:");
+        System.out.println(dag3);
 
     }
 }
