@@ -60,10 +60,31 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
         </dependency> -->
+         <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>6.0.3</version>
+        <scope>test</scope>
+    </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
+        <!-- JSON Processing (Jackson) for HttpClient request/response serialization -->
+      <dependency>
+          <groupId>com.fasterxml.jackson.core</groupId>
+          <artifactId>jackson-databind</artifactId>
+      </dependency>
+      <dependency>
+    <groupId>org.jgrapht</groupId>
+    <artifactId>jgrapht-core</artifactId>
+    <version>1.5.2</version>
+</dependency>
+<dependency>
+    <groupId>org.jgrapht</groupId>
+    <artifactId>jgrapht-io</artifactId>
+    <version>1.5.2</version>
+</dependency>
         <!-- <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
@@ -87,6 +108,31 @@
                 <configuration>
                     <release>21</release>
                 </configuration>
+            </plugin>
+			  <!-- Include source files in the JAR -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-sources</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/sources</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/java</directory>
+                                    <includes>
+                                        <include>**/*.java</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 		</plugins>
 	</build>
