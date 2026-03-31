@@ -734,8 +734,8 @@ public class TririgaWFAnalysisService {
                 .collect(Collectors.toList());
     }
 
-    // TODO: put this in a different file
-    @McpTool(name = "generateWFTrace", description = """
+   
+    @Tool(name = "generateWorkflowTrace", description = """
             Creates a Directed Analytic Graph of workflow calls.
             By default the tool returns all nodes/tasks in a workflow. However, an optional parameter can be used to only return a graph that contains 'call workflow'
             and 'swtich' nodes/tasks.
@@ -743,15 +743,15 @@ public class TririgaWFAnalysisService {
             Each node in the DAG contains information in the following format:
             "hashCode()+\": \"+wfName+\" \"+\"'\"+taskLabel+\"'\"+\" \"+type+\" \"+workflowStepID+\" \"+parentWorkflowStepID+\" \"+parentHashCode();"
             However the following node types will contain additional information.
-            Type = 14 will also contain the expression used for the switch.
-            Type = 38 will also contain the name of workflow being called.
+            Type = 14 will also be appended with the expression used for the switch.
+            Type = 38 will also be appended with the name of workflow being called.
 
             Use the 'getWorkflowTraceTypeSets' tool to get a list of valid set names.
 
             """)
     public String generateWorkflowTrace(
-            @McpToolParam(description = "The workflow name", required = true) String workflowName,
-            @McpToolParam(description = "Set of workflow task types to return in the DAG, defaults to 'ALL' is no parameter entered. Another common option is WF_CALL_FLOW, this option will return only Start, Switch, and Call Workflow tasks.", required = false) String... outputDetails) {
+            @ToolParam(description = "The workflow name", required = true) String workflowName,
+            @ToolParam(description = "Set of workflow task types to return in the DAG, defaults to 'ALL' is no parameter entered. Another common option is WF_CALL_FLOW, this option will return only Start, Switch, and Call Workflow tasks.", required = false) String... outputDetails) {
 
         DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> workflowMap = generateDAGForWorkflow(workflowName, null);
         String setName = (outputDetails.length > 0) ? outputDetails[0] : "ALL";
@@ -774,7 +774,7 @@ public class TririgaWFAnalysisService {
 
         return workflowMap.toString();
     }
-@McpTool(name = "generateCustomWorkflowTrace", description = """
+    @Tool(name = "generateCustomWorkflowTrace", description = """
             Creates a Directed Analytic Graph of workflow calls.
             By default the tool returns all nodes/tasks in a workflow. However, an optional parameter can be used to only return a graph that contains the task types equal to the passed
             in IDs. Example: generateCustomWorkflowTrace('triServiceAgreementLineItem - Synchronous - triUploadHidden', "1","14","38") 
@@ -787,8 +787,8 @@ public class TririgaWFAnalysisService {
 
             """)
      public String generateCustomWorkflowTrace(
-            @McpToolParam(description = "The workflow name", required = true) String workflowName,
-            @McpToolParam(description = "A string of task type IDs separated by commas. example: \"1\",\"14\",\"38\" ", required = false) String... outputDetails) {
+            @ToolParam(description = "The workflow name", required = true) String workflowName,
+            @ToolParam(description = "A string of task type IDs separated by commas. example: \"1\",\"14\",\"38\" ", required = false) String... outputDetails) {
 
         DirectedAcyclicGraph<WorkflowTracingStep, DefaultEdge> workflowMap = generateDAGForWorkflow(workflowName, null);
     
@@ -868,11 +868,11 @@ public class TririgaWFAnalysisService {
 
     }
 
-    @McpTool(name = "getWorkflowTraceTypeSets", description = """
+    @Tool(name = "getWorkflowTraceTypeSets", description = """
             Returns a list of pre-defined sets of task types to use for 'generateWFTrace' tool.
 
             """)
-     public List<String> generateCustomWorkflowTrace(){
+     public List<String> getWorkflowTraceTypeSets(){
 
         List<String> setNames = Stream.of(DagTypeSets.values())
                            .map(DagTypeSets::getLabel)
@@ -1030,10 +1030,10 @@ public class TririgaWFAnalysisService {
     }
 
     // TODO: put this in a different file
-    @McpTool(name = "get_db2_table_schema", description = "Fetches column names, types, and lengths for a DB2 table")
+    @Tool(name = "get_db2_table_schema", description = "Fetches column names, types, and lengths for a DB2 table")
     public List<Map<String, Object>> getTableSchema(
-            @McpToolParam(description = "The table name (case-sensitive)", required = true) String tableName,
-            @McpToolParam(description = "The schema/creator name", required = false) String schemaName) {
+            @ToolParam(description = "The table name (case-sensitive)", required = true) String tableName,
+            @ToolParam(description = "The schema/creator name", required = false) String schemaName) {
 
         // Authoritative DB2 catalog query
         String sqlQuery = "SELECT NAME, COLTYPE, LENGTH FROM SYSIBM.SYSCOLUMNS WHERE TBNAME = '" + tableName + "'";

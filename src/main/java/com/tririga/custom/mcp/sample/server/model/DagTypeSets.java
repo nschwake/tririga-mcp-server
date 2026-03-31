@@ -38,6 +38,6 @@ public enum DagTypeSets {
                 return type.idList;
             }
         }
-        return null; // Fallback
+        return new ArrayList<>(); //  
     }
 }
