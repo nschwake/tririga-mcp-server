@@ -21,6 +21,7 @@ import com.tririga.custom.mcp.sample.server.model.BoTypeInfo;
 import com.tririga.custom.mcp.sample.server.model.DagTypeSets;
 import com.tririga.custom.mcp.sample.server.model.FieldDefinition;
 import com.tririga.custom.mcp.sample.server.model.FieldMappingResult;
+import com.tririga.custom.mcp.sample.server.model.FieldReferenceResult;
 import com.tririga.custom.mcp.sample.server.model.FormAwareFieldMappingResult;
 import com.tririga.custom.mcp.sample.server.model.FormFieldMatch;
 import com.tririga.custom.mcp.sample.server.model.StepType;
@@ -29,6 +30,7 @@ import com.tririga.custom.mcp.sample.server.model.WorkflowTracingStep;
 
 import java.io.StringReader;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -307,312 +309,312 @@ public class TririgaWFAnalysisService {
                 .collect(Collectors.toList());
     }
 
-    // ══════════════════════════════════════════════════════════
-    // NEW TOOL 2 — findWorkflowsMappingIntoFieldViaForm
-    //
-    // Step 2 of the GUI-aware path (write direction).
-    // Call after the user has confirmed a specific form from
-    // the results of findFormsContainingField.
-    // ══════════════════════════════════════════════════════════
+    // // ══════════════════════════════════════════════════════════
+    // // NEW TOOL 2 — findWorkflowsMappingIntoFieldViaForm
+    // //
+    // // Step 2 of the GUI-aware path (write direction).
+    // // Call after the user has confirmed a specific form from
+    // // the results of findFormsContainingField.
+    // // ══════════════════════════════════════════════════════════
 
-    @Tool(description = """
-            Finds all published workflows that map (write) data into a specific field,
-            identified via a confirmed form (GUI). Use this as Step 2 AFTER calling
-            findFormsContainingField and the user has confirmed which form and BO type
-            they mean.
-            Requires guiId (from findFormsContainingField results) and atrSeq
-            (the field's ATR_SEQ, also from findFormsContainingField results).
-            Returns workflow name, task step, map type, and data source,
-            plus the form context showing the label the user sees vs. the
-            underlying technical label.
-            """)
-    public List<FormAwareFieldMappingResult> findWorkflowsMappingIntoFieldViaForm(
+    // @Tool(description = """
+    //         Finds all published workflows that map (write) data into a specific field,
+    //         identified via a confirmed form (GUI). Use this as Step 2 AFTER calling
+    //         findFormsContainingField and the user has confirmed which form and BO type
+    //         they mean.
+    //         Requires guiId (from findFormsContainingField results) and atrSeq
+    //         (the field's ATR_SEQ, also from findFormsContainingField results).
+    //         Returns workflow name, task step, map type, and data source,
+    //         plus the form context showing the label the user sees vs. the
+    //         underlying technical label.
+    //         """)
+    // public List<FormAwareFieldMappingResult> findWorkflowsMappingIntoFieldViaForm(
 
-            @ToolParam(description = """
-                    The GUI_ID of the confirmed form, from findFormsContainingField results.
-                    e.g. 10002361 for triEmployee.
-                    """) long guiId,
+    //         @ToolParam(description = """
+    //                 The GUI_ID of the confirmed form, from findFormsContainingField results.
+    //                 e.g. 10002361 for triEmployee.
+    //                 """) long guiId,
 
-            @ToolParam(description = """
-                    The ATR_SEQ of the confirmed field, from findFormsContainingField results.
-                    e.g. 1235 for triFunctionalRoleCL.
-                    """) int atrSeq) {
-        // Join back through GUI_HEADER to get SPEC_TEMPLATE_ID,
-        // then join OBJECT_TYPE_MAP on TARGET_OBJECT_TYPE_ID + TARGET_MEMBER_ID.
-        // This ensures we only return workflows targeting the exact field on
-        // the exact BO type the user confirmed — not other BOs with the same ATR_SEQ.
-        String sql = """
-                SELECT
-                    wf.WF_NAME,
-                    wf.BO_TYPE_NAME,
-                    wf.BO_EVENT_NAME,
-                    t.TASK_LABEL,
-                    t.TASK_TYPE,
-                    otm.MAP_TYPE,
-                    otm.FIELD_VALUE,
-                    sf_target.ATR_NAME          AS TARGETFIELDNAME,
-                    sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
-                    sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
-                    sf_src.ATR_NAME             AS SOURCEFIELDNAME,
-                    sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL,
-                    gh.GUI_NAME,
-                    gh.GUI_LABEL                AS FORM_LABEL,
-                    gf.GUI_FIELD_LABEL          AS FORM_FIELD_LABEL,
-                    gh.DEFAULT_GUI
-                FROM GUI_HEADER gh
-                JOIN GUI_FIELDS_PUBL gf
-                    ON  gf.GUI_ID   = gh.GUI_ID
-                    AND gf.ATR_SEQ  =
-                """
-                + atrSeq
-                + """
+    //         @ToolParam(description = """
+    //                 The ATR_SEQ of the confirmed field, from findFormsContainingField results.
+    //                 e.g. 1235 for triFunctionalRoleCL.
+    //                 """) int atrSeq) {
+    //     // Join back through GUI_HEADER to get SPEC_TEMPLATE_ID,
+    //     // then join OBJECT_TYPE_MAP on TARGET_OBJECT_TYPE_ID + TARGET_MEMBER_ID.
+    //     // This ensures we only return workflows targeting the exact field on
+    //     // the exact BO type the user confirmed — not other BOs with the same ATR_SEQ.
+    //     String sql = """
+    //             SELECT
+    //                 wf.WF_NAME,
+    //                 wf.BO_TYPE_NAME,
+    //                 wf.BO_EVENT_NAME,
+    //                 t.TASK_LABEL,
+    //                 t.TASK_TYPE,
+    //                 otm.MAP_TYPE,
+    //                 otm.FIELD_VALUE,
+    //                 sf_target.ATR_NAME          AS TARGETFIELDNAME,
+    //                 sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
+    //                 sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
+    //                 sf_src.ATR_NAME             AS SOURCEFIELDNAME,
+    //                 sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL,
+    //                 gh.GUI_NAME,
+    //                 gh.GUI_LABEL                AS FORM_LABEL,
+    //                 gf.GUI_FIELD_LABEL          AS FORM_FIELD_LABEL,
+    //                 gh.DEFAULT_GUI
+    //             FROM GUI_HEADER gh
+    //             JOIN GUI_FIELDS_PUBL gf
+    //                 ON  gf.GUI_ID   = gh.GUI_ID
+    //                 AND gf.ATR_SEQ  =
+    //             """
+    //             + atrSeq
+    //             + """
 
-                        JOIN WF_TEMPLATE wf
-                            ON  wf.BO_TYPE_ID  = gh.SPEC_TEMPLATE_ID
-                            AND wf.STATUS_ID   = 10
-                        JOIN TASK t
-                            ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
-                            AND t.VERSION        = wf.WF_TEMPLATE_VERSION
-                        JOIN OBJECT_TYPE_MAP otm
-                            ON  otm.MAP_ID              = t.MAP_ID
-                            AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
-                            AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
-                            AND otm.TARGET_OBJECT_TYPE_ID = gh.SPEC_TEMPLATE_ID
-                            AND otm.TARGET_MEMBER_ID      = gf.ATR_SEQ
-                        JOIN SOBJTYPE_FIELDS sf_target
-                            ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
-                            AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
-                        LEFT JOIN SOBJTYPE_FIELDS sf_src
-                            ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
-                            AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
-                        WHERE gh.GUI_ID =
-                        """
-                + guiId
-                + """
+    //                     JOIN WF_TEMPLATE wf
+    //                         ON  wf.BO_TYPE_ID  = gh.SPEC_TEMPLATE_ID
+    //                         AND wf.STATUS_ID   = 10
+    //                     JOIN TASK t
+    //                         ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+    //                         AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+    //                     JOIN OBJECT_TYPE_MAP otm
+    //                         ON  otm.MAP_ID              = t.MAP_ID
+    //                         AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
+    //                         AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
+    //                         AND otm.TARGET_OBJECT_TYPE_ID = gh.SPEC_TEMPLATE_ID
+    //                         AND otm.TARGET_MEMBER_ID      = gf.ATR_SEQ
+    //                     JOIN SOBJTYPE_FIELDS sf_target
+    //                         ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+    //                         AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+    //                     LEFT JOIN SOBJTYPE_FIELDS sf_src
+    //                         ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+    //                         AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
+    //                     WHERE gh.GUI_ID =
+    //                     """
+    //             + guiId
+    //             + """
 
-                        AND otm.MAP_TYPE NOT IN (50, 60)
-                        ORDER BY wf.WF_NAME, t.TASK_LABEL
-                        """;
+    //                     AND otm.MAP_TYPE NOT IN (50, 60)
+    //                     ORDER BY wf.WF_NAME, t.TASK_LABEL
+    //                     """;
 
-        return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
-                .stream()
-                .map(FormAwareFieldMappingResult::from)
-                .collect(Collectors.toList());
-    }
+    //     return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
+    //             .stream()
+    //             .map(FormAwareFieldMappingResult::from)
+    //             .collect(Collectors.toList());
+    // }
 
-    // ══════════════════════════════════════════════════════════
-    // NEW TOOL 3 — findWorkflowsReadingFromFieldViaForm
-    //
-    // Step 2 of the GUI-aware path (read direction).
-    // ══════════════════════════════════════════════════════════
+    // // ══════════════════════════════════════════════════════════
+    // // NEW TOOL 3 — findWorkflowsReadingFromFieldViaForm
+    // //
+    // // Step 2 of the GUI-aware path (read direction).
+    // // ══════════════════════════════════════════════════════════
 
-    @Tool(description = """
-            Finds all published workflows that read from (use as a source) a specific
-            field, identified via a confirmed form (GUI). Use this as Step 2 AFTER
-            calling findFormsContainingField and the user has confirmed which form
-            and BO type they mean.
-            Requires guiId and atrSeq from findFormsContainingField results.
-            This is the read-direction complement to findWorkflowsMappingIntoFieldViaForm.
-            """)
-    public List<FormAwareFieldMappingResult> findWorkflowsReadingFromFieldViaForm(
+    // @Tool(description = """
+    //         Finds all published workflows that read from (use as a source) a specific
+    //         field, identified via a confirmed form (GUI). Use this as Step 2 AFTER
+    //         calling findFormsContainingField and the user has confirmed which form
+    //         and BO type they mean.
+    //         Requires guiId and atrSeq from findFormsContainingField results.
+    //         This is the read-direction complement to findWorkflowsMappingIntoFieldViaForm.
+    //         """)
+    // public List<FormAwareFieldMappingResult> findWorkflowsReadingFromFieldViaForm(
 
-            @ToolParam(description = """
-                    The GUI_ID of the confirmed form, from findFormsContainingField results.
-                    e.g. 10002361 for triEmployee.
-                    """) long guiId,
+    //         @ToolParam(description = """
+    //                 The GUI_ID of the confirmed form, from findFormsContainingField results.
+    //                 e.g. 10002361 for triEmployee.
+    //                 """) long guiId,
 
-            @ToolParam(description = """
-                    The ATR_SEQ of the confirmed field, from findFormsContainingField results.
-                    e.g. 1235 for triFunctionalRoleCL.
-                    """) int atrSeq) {
-        String sql = """
-                SELECT
-                    wf.WF_NAME,
-                    wf.BO_TYPE_NAME,
-                    wf.BO_EVENT_NAME,
-                    t.TASK_LABEL,
-                    t.TASK_TYPE,
-                    otm.MAP_TYPE,
-                    otm.FIELD_VALUE,
-                    sf_target.ATR_NAME          AS TARGETFIELDNAME,
-                    sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
-                    sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
-                    sf_src.ATR_NAME             AS SOURCEFIELDNAME,
-                    sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL,
-                    gh.GUI_NAME,
-                    gh.GUI_LABEL                AS FORM_LABEL,
-                    gf.GUI_FIELD_LABEL          AS FORM_FIELD_LABEL,
-                    gh.DEFAULT_GUI
-                FROM GUI_HEADER gh
-                JOIN GUI_FIELDS_PUBL gf
-                    ON  gf.GUI_ID   = gh.GUI_ID
-                    AND gf.ATR_SEQ  =
-                """
-                + atrSeq
-                + """
-                        JOIN WF_TEMPLATE wf
-                            ON  wf.BO_TYPE_ID  = gh.SPEC_TEMPLATE_ID
-                            AND wf.STATUS_ID   = 10
-                        JOIN TASK t
-                            ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
-                            AND t.VERSION        = wf.WF_TEMPLATE_VERSION
-                        JOIN OBJECT_TYPE_MAP otm
-                            ON  otm.MAP_ID              = t.MAP_ID
-                            AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
-                            AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
-                            AND otm.SRC_OBJECT_TYPE_ID  = gh.SPEC_TEMPLATE_ID
-                            AND otm.SRC_MEMBER_ID       = gf.ATR_SEQ
-                        JOIN SOBJTYPE_FIELDS sf_src
-                            ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
-                            AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
-                        LEFT JOIN SOBJTYPE_FIELDS sf_target
-                            ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
-                            AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
-                        WHERE gh.GUI_ID =
-                        """
-                + guiId
-                + """
-                          AND otm.MAP_TYPE NOT IN (50, 60)
-                        ORDER BY wf.WF_NAME, t.TASK_LABEL
-                        """;
+    //         @ToolParam(description = """
+    //                 The ATR_SEQ of the confirmed field, from findFormsContainingField results.
+    //                 e.g. 1235 for triFunctionalRoleCL.
+    //                 """) int atrSeq) {
+    //     String sql = """
+    //             SELECT
+    //                 wf.WF_NAME,
+    //                 wf.BO_TYPE_NAME,
+    //                 wf.BO_EVENT_NAME,
+    //                 t.TASK_LABEL,
+    //                 t.TASK_TYPE,
+    //                 otm.MAP_TYPE,
+    //                 otm.FIELD_VALUE,
+    //                 sf_target.ATR_NAME          AS TARGETFIELDNAME,
+    //                 sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
+    //                 sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
+    //                 sf_src.ATR_NAME             AS SOURCEFIELDNAME,
+    //                 sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL,
+    //                 gh.GUI_NAME,
+    //                 gh.GUI_LABEL                AS FORM_LABEL,
+    //                 gf.GUI_FIELD_LABEL          AS FORM_FIELD_LABEL,
+    //                 gh.DEFAULT_GUI
+    //             FROM GUI_HEADER gh
+    //             JOIN GUI_FIELDS_PUBL gf
+    //                 ON  gf.GUI_ID   = gh.GUI_ID
+    //                 AND gf.ATR_SEQ  =
+    //             """
+    //             + atrSeq
+    //             + """
+    //                     JOIN WF_TEMPLATE wf
+    //                         ON  wf.BO_TYPE_ID  = gh.SPEC_TEMPLATE_ID
+    //                         AND wf.STATUS_ID   = 10
+    //                     JOIN TASK t
+    //                         ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+    //                         AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+    //                     JOIN OBJECT_TYPE_MAP otm
+    //                         ON  otm.MAP_ID              = t.MAP_ID
+    //                         AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
+    //                         AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
+    //                         AND otm.SRC_OBJECT_TYPE_ID  = gh.SPEC_TEMPLATE_ID
+    //                         AND otm.SRC_MEMBER_ID       = gf.ATR_SEQ
+    //                     JOIN SOBJTYPE_FIELDS sf_src
+    //                         ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+    //                         AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
+    //                     LEFT JOIN SOBJTYPE_FIELDS sf_target
+    //                         ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+    //                         AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+    //                     WHERE gh.GUI_ID =
+    //                     """
+    //             + guiId
+    //             + """
+    //                       AND otm.MAP_TYPE NOT IN (50, 60)
+    //                     ORDER BY wf.WF_NAME, t.TASK_LABEL
+    //                     """;
 
-        return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
-                .stream()
-                .map(FormAwareFieldMappingResult::from)
-                .collect(Collectors.toList());
-    }
+    //     return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
+    //             .stream()
+    //             .map(FormAwareFieldMappingResult::from)
+    //             .collect(Collectors.toList());
+    // }
 
-    // ══════════════════════════════════════════════════════════
-    // v1 TOOLS — unchanged, kept for technical-name queries
-    // ══════════════════════════════════════════════════════════
+    // // ══════════════════════════════════════════════════════════
+    // // v1 TOOLS — unchanged, kept for technical-name queries
+    // // ══════════════════════════════════════════════════════════
 
-    @Tool(description = """
-            Finds all published TRIRIGA workflows that map (write) data into a specific
-            field on a specific business object type, searched by technical field name
-            or SOBJTYPE label.
-            Use this when you already know the exact technical field name (e.g. 'triNameTX')
-            or the SOBJTYPE label (e.g. 'Task Name') and the BO type name.
-            If the user only knows the label they see on a form, use findFormsContainingField
-            first to resolve the technical name, then confirm with the user.
-            """)
-    public List<FieldMappingResult> findWorkflowsMappingIntoField(
-            @ToolParam(description = "The business object type name, e.g. 'triWorkTask'. Required.") String boTypeName,
-            @ToolParam(description = "Technical field name (e.g. 'triNameTX') or SOBJTYPE label (e.g. 'Task Name'). Partial match supported.") String fieldNameOrLabel) {
-        String p = "'%" + fieldNameOrLabel + "%'";
-        String sql = """
-                SELECT
-                    wf.WF_NAME,
-                    wf.BO_TYPE_NAME,
-                    wf.BO_EVENT_NAME,
-                    t.TASK_LABEL,
-                    t.TASK_TYPE,
-                    otm.MAP_TYPE,
-                    otm.FIELD_VALUE,
-                    sf_target.ATR_NAME          AS TARGETFIELDNAME,
-                    sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
-                    sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
-                    sf_src.ATR_NAME             AS SOURCEFIELDNAME,
-                    sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL
-                FROM WF_TEMPLATE wf
-                JOIN TASK t
-                    ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
-                    AND t.VERSION        = wf.WF_TEMPLATE_VERSION
-                JOIN OBJECT_TYPE_MAP otm
-                    ON  otm.MAP_ID              = t.MAP_ID
-                    AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
-                    AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
-                JOIN SOBJTYPE_FIELDS sf_target
-                    ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
-                    AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
-                LEFT JOIN SOBJTYPE_FIELDS sf_src
-                    ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
-                    AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
-                WHERE wf.STATUS_ID    = 10
-                  AND wf.BO_TYPE_NAME =
-                  """
-                + boTypeName
-                + """
-                            AND otm.MAP_TYPE NOT IN (50, 60)
-                            AND (
-                                     UPPER(sf_target.ATR_NAME) LIKE UPPER
-                        """
-                + "(" + p + ") "
-                + """
-                            OR UPPER(sf_target.ATR_FIELD_LABEL) LIKE UPPER
-                        """
-                + "(" + p + ") "
-                + """
-                                )
-                        ORDER BY wf.WF_NAME, t.TASK_LABEL
-                        """;
+    // @Tool(description = """
+    //         Finds all published TRIRIGA workflows that map (write) data into a specific
+    //         field on a specific business object type, searched by technical field name
+    //         or SOBJTYPE label.
+    //         Use this when you already know the exact technical field name (e.g. 'triNameTX')
+    //         or the SOBJTYPE label (e.g. 'Task Name') and the BO type name.
+    //         If the user only knows the label they see on a form, use findFormsContainingField
+    //         first to resolve the technical name, then confirm with the user.
+    //         """)
+    // public List<FieldMappingResult> findWorkflowsMappingIntoField(
+    //         @ToolParam(description = "The business object type name, e.g. 'triWorkTask'. Required.") String boTypeName,
+    //         @ToolParam(description = "Technical field name (e.g. 'triNameTX') or SOBJTYPE label (e.g. 'Task Name'). Partial match supported.") String fieldNameOrLabel) {
+    //     String p = "'%" + fieldNameOrLabel + "%'";
+    //     String sql = """
+    //             SELECT
+    //                 wf.WF_NAME,
+    //                 wf.BO_TYPE_NAME,
+    //                 wf.BO_EVENT_NAME,
+    //                 t.TASK_LABEL,
+    //                 t.TASK_TYPE,
+    //                 otm.MAP_TYPE,
+    //                 otm.FIELD_VALUE,
+    //                 sf_target.ATR_NAME          AS TARGETFIELDNAME,
+    //                 sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
+    //                 sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
+    //                 sf_src.ATR_NAME             AS SOURCEFIELDNAME,
+    //                 sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL
+    //             FROM WF_TEMPLATE wf
+    //             JOIN TASK t
+    //                 ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+    //                 AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+    //             JOIN OBJECT_TYPE_MAP otm
+    //                 ON  otm.MAP_ID              = t.MAP_ID
+    //                 AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
+    //                 AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
+    //             JOIN SOBJTYPE_FIELDS sf_target
+    //                 ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+    //                 AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+    //             LEFT JOIN SOBJTYPE_FIELDS sf_src
+    //                 ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+    //                 AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
+    //             WHERE wf.STATUS_ID    = 10
+    //               AND wf.BO_TYPE_NAME =
+    //               """
+    //             + boTypeName
+    //             + """
+    //                         AND otm.MAP_TYPE NOT IN (50, 60)
+    //                         AND (
+    //                                  UPPER(sf_target.ATR_NAME) LIKE UPPER
+    //                     """
+    //             + "(" + p + ") "
+    //             + """
+    //                         OR UPPER(sf_target.ATR_FIELD_LABEL) LIKE UPPER
+    //                     """
+    //             + "(" + p + ") "
+    //             + """
+    //                             )
+    //                     ORDER BY wf.WF_NAME, t.TASK_LABEL
+    //                     """;
 
-        return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
-                .stream()
-                .map(FieldMappingResult::from)
-                .collect(Collectors.toList());
-    }
+    //     return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
+    //             .stream()
+    //             .map(FieldMappingResult::from)
+    //             .collect(Collectors.toList());
+    // }
 
-    @Tool(description = """
-            Finds all published TRIRIGA workflows that read from a specific field
-            on a specific business object type, searched by technical field name
-            or SOBJTYPE label.
-            Use this when you already know the exact technical field name or SOBJTYPE label.
-            If the user only knows the form label, use findFormsContainingField first.
-            """)
-    public List<FieldMappingResult> findWorkflowsReadingFromField(
-            @ToolParam(description = "The business object type name, e.g. 'triWorkTask'. Required.") String boTypeName,
-            @ToolParam(description = "Technical field name or SOBJTYPE label. Partial match supported.") String fieldNameOrLabel) {
-        String p = "'%" + fieldNameOrLabel + "%'";
-        String sql = """
-                SELECT
-                    wf.WF_NAME,
-                    wf.BO_TYPE_NAME,
-                    wf.BO_EVENT_NAME,
-                    t.TASK_LABEL,
-                    t.TASK_TYPE,
-                    otm.MAP_TYPE,
-                    otm.FIELD_VALUE,
-                    sf_target.ATR_NAME          AS TARGETFIELDNAME,
-                    sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
-                    sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
-                    sf_src.ATR_NAME             AS SOURCEFIELDNAME,
-                    sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL
-                FROM WF_TEMPLATE wf
-                JOIN TASK t
-                    ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
-                    AND t.VERSION        = wf.WF_TEMPLATE_VERSION
-                JOIN OBJECT_TYPE_MAP otm
-                    ON  otm.MAP_ID              = t.MAP_ID
-                    AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
-                    AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
-                JOIN SOBJTYPE_FIELDS sf_src
-                    ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
-                    AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
-                LEFT JOIN SOBJTYPE_FIELDS sf_target
-                    ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
-                    AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
-                WHERE wf.STATUS_ID    = 10
-                  AND wf.BO_TYPE_NAME =
-                  """
-                + boTypeName
-                + """
-                        AND otm.MAP_TYPE    NOT IN (50, 60)
-                        AND (
-                              UPPER(sf_src.ATR_NAME)        LIKE UPPER"""
-                + "(" + p + ") "
-                + """
-                        OR UPPER(sf_src.ATR_FIELD_LABEL) LIKE UPPER"""
-                + "(" + p + ") "
-                + """
-                                )
-                        ORDER BY wf.WF_NAME, t.TASK_LABEL
-                        """;
+    // @Tool(description = """
+    //         Finds all published TRIRIGA workflows that read from a specific field
+    //         on a specific business object type, searched by technical field name
+    //         or SOBJTYPE label.
+    //         Use this when you already know the exact technical field name or SOBJTYPE label.
+    //         If the user only knows the form label, use findFormsContainingField first.
+    //         """)
+    // public List<FieldMappingResult> findWorkflowsReadingFromField(
+    //         @ToolParam(description = "The business object type name, e.g. 'triWorkTask'. Required.") String boTypeName,
+    //         @ToolParam(description = "Technical field name or SOBJTYPE label. Partial match supported.") String fieldNameOrLabel) {
+    //     String p = "'%" + fieldNameOrLabel + "%'";
+    //     String sql = """
+    //             SELECT
+    //                 wf.WF_NAME,
+    //                 wf.BO_TYPE_NAME,
+    //                 wf.BO_EVENT_NAME,
+    //                 t.TASK_LABEL,
+    //                 t.TASK_TYPE,
+    //                 otm.MAP_TYPE,
+    //                 otm.FIELD_VALUE,
+    //                 sf_target.ATR_NAME          AS TARGETFIELDNAME,
+    //                 sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
+    //                 sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
+    //                 sf_src.ATR_NAME             AS SOURCEFIELDNAME,
+    //                 sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL
+    //             FROM WF_TEMPLATE wf
+    //             JOIN TASK t
+    //                 ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+    //                 AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+    //             JOIN OBJECT_TYPE_MAP otm
+    //                 ON  otm.MAP_ID              = t.MAP_ID
+    //                 AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
+    //                 AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
+    //             JOIN SOBJTYPE_FIELDS sf_src
+    //                 ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+    //                 AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
+    //             LEFT JOIN SOBJTYPE_FIELDS sf_target
+    //                 ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+    //                 AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+    //             WHERE wf.STATUS_ID    = 10
+    //               AND wf.BO_TYPE_NAME =
+    //               """
+    //             + boTypeName
+    //             + """
+    //                     AND otm.MAP_TYPE    NOT IN (50, 60)
+    //                     AND (
+    //                           UPPER(sf_src.ATR_NAME)        LIKE UPPER"""
+    //             + "(" + p + ") "
+    //             + """
+    //                     OR UPPER(sf_src.ATR_FIELD_LABEL) LIKE UPPER"""
+    //             + "(" + p + ") "
+    //             + """
+    //                             )
+    //                     ORDER BY wf.WF_NAME, t.TASK_LABEL
+    //                     """;
 
-        return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
-                .stream()
-                .map(FieldMappingResult::from)
-                .collect(Collectors.toList());
-    }
+    //     return databaseService.runSimpleQuery("mcp-run-simple-query", sql, null)
+    //             .stream()
+    //             .map(FieldMappingResult::from)
+    //             .collect(Collectors.toList());
+    // }
 
     @Tool(description = """
             Returns all field mappings defined in a specific published TRIRIGA workflow.
@@ -1106,5 +1108,402 @@ public class TririgaWFAnalysisService {
         matcher.appendTail(sb);
 
         return sb.toString();
+    }
+
+   // ══════════════════════════════════════════════════════════════════════════
+    // findWorkflowsReferencingFieldAnywhere
+    //
+    // WHY THIS EXISTS
+    // ───────────────
+    // The existing field-search tools (findWorkflowsMappingIntoField,
+    // findWorkflowsReadingFromField, and their ViaForm variants) have three gaps:
+    //
+    // GAP 1 — '-Any-' workflows are invisible.
+    //   All four tools join WF_TEMPLATE on BO_TYPE_ID = SPEC_TEMPLATE_ID, which
+    //   silently drops every workflow registered against '-Any-'.  Real example:
+    //   'triPeople - triCopy - Creates a Copy' copies triFunctionalRoleCL but
+    //   never appears in a Functional Role search via those tools.
+    //
+    // GAP 2 — Expression-based task field references are never checked.
+    //   Some task types store a condition/filter in EXPRESSION / EXPRESSION_PARAM
+    //   with TASK.MAP_ID = EXPRESSION.ID.  No existing tool queries those tables
+    //   for field references.
+    //
+    //   IMPORTANT: EXPRESSION.ID and OBJECT_TYPE_MAP.MAP_ID share the same integer
+    //   space and collide frequently, so joining to EXPRESSION without a TASK_TYPE
+    //   filter produces false positives for mapping task types (Create Record,
+    //   Modify Records, etc.) whose MAP_ID happens to equal an unrelated
+    //   EXPRESSION.ID.  The query uses an explicit IN-list of task types confirmed
+    //   to use EXPRESSION as their primary data structure:
+    //     1  = Start
+    //     14 = Switch
+    //     21 = Break
+    //     40 = Variable Definition
+    //     41 = Variable Assignment
+    //     43 = Fact Condition
+    //
+    // GAP 3 — MAP_TYPE 80 (formula mapping) field references are never resolved.
+    //   For MAP_TYPE 80 rows, OBJECT_TYPE_MAP.SRC_MEMBER_ID is NOT a field ATR_SEQ;
+    //   it is a SOBJTYPE_FORMULA_HDR.FORMULA_ID.  The formula's input parameters
+    //   (the source fields) are stored in SOBJTYPE_FORMULA_PARAMS with
+    //   PARAM_TYPE='I' and PARAM_FLD_QRY_FLG='F'.  The field name is in
+    //   PARAM_DISP_STR as "SectionName:FieldTechnicalName" — the part after the
+    //   colon is the ATR_NAME.  SOBJTYPE_FORMULA_HDR.SPEC_TEMPLATE_ID carries the
+    //   negated WF_TEMPLATE_ID (a workflow-instance marker), so the SOBJTYPE_FIELDS
+    //   join must use OTM.SRC_OBJECT_TYPE_ID rather than h.SPEC_TEMPLATE_ID.
+    //   The existing TARGET/SOURCE queries silently skip all MAP_TYPE 80 rows
+    //   because SRC_MEMBER_ID never resolves in SOBJTYPE_FIELDS.
+    //
+    // APPROACH — FOUR QUERIES, ONE RESULT SET
+    // ─────────────────────────────────────────
+    // Query 1 (TARGET): field is the write target in OBJECT_TYPE_MAP.
+    //   Excludes MAP_TYPE 80 (handled separately) and 50/60 (filter/conditional).
+    //
+    // Query 2 (SOURCE): field is the read source in OBJECT_TYPE_MAP.
+    //   Excludes MAP_TYPE 80 and 50/60.
+    //
+    // Query 3 (EXPR): field appears in a condition/filter expression.
+    //   TASK (types 1,14,21,40,41,43) → EXPRESSION → EXPRESSION_PARAM
+    //   → SOBJTYPE_FIELDS via LIKE match on PARAM_STR XML fieldName attribute.
+    //   Explicit TASK_TYPE filter prevents false positives from ID collision.
+    //
+    // Query 4 (FORMULA): field is a formula input parameter (MAP_TYPE 80).
+    //   OBJECT_TYPE_MAP (MAP_TYPE=80) → SOBJTYPE_FORMULA_HDR (SRC_MEMBER_ID=FORMULA_ID)
+    //   → SOBJTYPE_FORMULA_PARAMS (PARAM_TYPE='I', PARAM_FLD_QRY_FLG='F')
+    //   → SOBJTYPE_FIELDS on OTM.SRC_OBJECT_TYPE_ID + field name from PARAM_DISP_STR.
+    //   FIELD_VALUE carries both the formula string and the formula param display
+    //   string so callers can see the full computation context.
+    //
+    // All four results are merged, deduplicated, and sorted by workflow name.
+    //
+    // RESULT MODEL  →  FieldReferenceResult
+    // ──────────────────────────────────────
+    //   direction:   TARGET | SOURCE | EXPR | FORMULA
+    //   workflowName, boTypeName, boEventName
+    //   taskLabel, taskType
+    //   mapType      — null for EXPR; 80 for FORMULA; map type for TARGET/SOURCE
+    //   fieldValue   — EXPR: EXPRESSION.FORMULA
+    //                  FORMULA: "<formula> | param: <PARAM_DISP_STR>"
+    //                  LiteralSet TARGET/SOURCE: the literal value; else null
+    //   targetFieldName / targetFieldLabel / targetSectionLabel
+    //     → EXPR/FORMULA: the matched source field (being tested / used as input)
+    //   sourceFieldName / sourceFieldLabel
+    //     → EXPR: null    → FORMULA: null (formula has no single source field;
+    //                                      see fieldValue for full param context)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Tool(description = """
+            Finds ALL published TRIRIGA workflows that reference a specific field —
+            regardless of the BO type the workflow is registered against, and
+            regardless of the type of task or mapping that contains the reference. Basically a "where used" check for a field.
+
+            Closes three gaps in the existing field-search tools:
+
+            GAP 1 — '-Any-' workflows (e.g. triCopy workflows) are invisible to
+            findWorkflowsMappingIntoField and findWorkflowsReadingFromField because
+            those tools join through BO_TYPE_ID, which never matches the sentinel
+            ID carried by '-Any-' workflows.
+
+            GAP 2 — Expression-based task field references are never checked. Some
+            task types store field references in EXPRESSION / EXPRESSION_PARAM via
+            TASK.MAP_ID = EXPRESSION.ID. Covered task types: Start (1), Switch (14),
+            Break (21), Variable Definition (40), Variable Assignment (41), Fact
+            Condition (43). An explicit task type filter is required — EXPRESSION.ID
+            and OBJECT_TYPE_MAP.MAP_ID share the same integer space and collide
+            frequently, causing false positives without the filter.
+
+            GAP 3 — MAP_TYPE 80 (formula mapping) field references are never resolved.
+            For MAP_TYPE 80, OBJECT_TYPE_MAP.SRC_MEMBER_ID is a SOBJTYPE_FORMULA_HDR
+            FORMULA_ID, not a field ATR_SEQ. The source fields are stored in
+            SOBJTYPE_FORMULA_PARAMS and are completely invisible to the existing
+            TARGET/SOURCE queries.
+
+            This tool runs four queries and merges the results:
+              • TARGET  — field is written to in a mapping task (OBJECT_TYPE_MAP)
+              • SOURCE  — field is read from in a mapping task (OBJECT_TYPE_MAP)
+              • EXPR    — field appears in an expression-based task; taskType
+                          identifies which kind; fieldValue carries the formula
+              • FORMULA — field is an input parameter in a MAP_TYPE 80 formula;
+                          fieldValue carries the formula and the param display string
+
+            Accepts either a technical field name (e.g. triFunctionalRoleCL) or a
+            SOBJTYPE label (e.g. 'Functional Role'). Partial, case-insensitive match
+            on both ATR_NAME and ATR_FIELD_LABEL in SOBJTYPE_FIELDS.
+
+            Use this as the definitive field-reference search. The narrower BO-scoped
+            tools are still useful when you need to filter by a specific BO type.
+            """)
+    public List<FieldReferenceResult> findWorkflowsReferencingFieldAnywhere(
+
+            @ToolParam(description = """
+                    Technical field name (e.g. triFunctionalRoleCL) or SOBJTYPE label
+                    (e.g. 'Functional Role'). Partial case-insensitive match supported.
+                    If you only know the on-screen form label, call findFormsContainingField
+                    first to resolve the underlying technical name, then pass it here.
+                    """) String fieldNameOrLabel) {
+
+        String p = "'%" + fieldNameOrLabel + "%'";
+
+        // ── Query 1: TARGET — field is being written to ───────────────────────
+        // MAP_TYPE 80 excluded: SRC_MEMBER_ID is a FORMULA_ID, not an ATR_SEQ,
+        // so the SOBJTYPE_FIELDS join on SOURCE side always returns nothing for
+        // those rows. They are handled by Query 4 instead.
+        // MAP_TYPE 50 (Filter) and 60 (Conditional) excluded: they do not move data.
+        String sqlTarget = """
+                SELECT
+                    wf.WF_NAME,
+                    wf.BO_TYPE_NAME,
+                    wf.BO_EVENT_NAME,
+                    t.TASK_LABEL,
+                    t.TASK_TYPE,
+                    otm.MAP_TYPE,
+                    otm.FIELD_VALUE,
+                    'TARGET'                    AS DIRECTION,
+                    sf_target.ATR_NAME          AS TARGETFIELDNAME,
+                    sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
+                    sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
+                    sf_src.ATR_NAME             AS SOURCEFIELDNAME,
+                    sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL
+                FROM WF_TEMPLATE wf
+                JOIN TASK t
+                    ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+                    AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+                JOIN OBJECT_TYPE_MAP otm
+                    ON  otm.MAP_ID              = t.MAP_ID
+                    AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
+                    AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
+                JOIN SOBJTYPE_FIELDS sf_target
+                    ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+                    AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+                LEFT JOIN SOBJTYPE_FIELDS sf_src
+                    ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+                    AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
+                WHERE wf.STATUS_ID = 10
+                  AND otm.MAP_TYPE NOT IN (50, 60, 80)
+                  AND (
+                        UPPER(sf_target.ATR_NAME)        LIKE UPPER\s"""
+                + "(" + p + ") "
+                + "OR UPPER(sf_target.ATR_FIELD_LABEL) LIKE UPPER"
+                + "(" + p + ") "
+                + ")";
+
+        // ── Query 2: SOURCE — field is being read from ────────────────────────
+        // Same MAP_TYPE exclusions as Query 1.
+        String sqlSource = """
+                SELECT
+                    wf.WF_NAME,
+                    wf.BO_TYPE_NAME,
+                    wf.BO_EVENT_NAME,
+                    t.TASK_LABEL,
+                    t.TASK_TYPE,
+                    otm.MAP_TYPE,
+                    otm.FIELD_VALUE,
+                    'SOURCE'                    AS DIRECTION,
+                    sf_target.ATR_NAME          AS TARGETFIELDNAME,
+                    sf_target.ATR_FIELD_LABEL   AS TARGETFIELDLABEL,
+                    sf_target.SECTION_LABEL     AS TARGETSECTIONLABEL,
+                    sf_src.ATR_NAME             AS SOURCEFIELDNAME,
+                    sf_src.ATR_FIELD_LABEL      AS SOURCEFIELDLABEL
+                FROM WF_TEMPLATE wf
+                JOIN TASK t
+                    ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+                    AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+                JOIN OBJECT_TYPE_MAP otm
+                    ON  otm.MAP_ID              = t.MAP_ID
+                    AND otm.WF_TEMPLATE_ID      = wf.WF_TEMPLATE_ID
+                    AND otm.WF_TEMPLATE_VERSION = wf.WF_TEMPLATE_VERSION
+                JOIN SOBJTYPE_FIELDS sf_src
+                    ON  sf_src.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+                    AND sf_src.ATR_SEQ          = otm.SRC_MEMBER_ID
+                LEFT JOIN SOBJTYPE_FIELDS sf_target
+                    ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+                    AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+                WHERE wf.STATUS_ID = 10
+                  AND otm.MAP_TYPE NOT IN (50, 60, 80)
+                  AND (
+                        UPPER(sf_src.ATR_NAME)        LIKE UPPER\s"""
+                + "(" + p + ") "
+                + "OR UPPER(sf_src.ATR_FIELD_LABEL) LIKE UPPER"
+                + "(" + p + ") "
+                + ")";
+
+        // ── Query 3: EXPR — field appears in an expression-based task ─────────
+        //
+        // PARAM_STR XML structure for field-type params:
+        //   <task type='field' id='...'><field fieldName='triXxx'
+        //       sectionName='...' boId='...' /></task>
+        //
+        // We pre-filter to type='field' rows, then join SOBJTYPE_FIELDS where
+        // the ATR_NAME appears literally in PARAM_STR as fieldName='<ATR_NAME>'.
+        //
+        // TASK_TYPE IN-list is required to prevent ID collision false positives.
+        // Verified types and their EXPR_ONLY vs IN_BOTH collision counts:
+        //
+        //   Type  Name                  EXPR_ONLY  IN_BOTH
+        //   ────  ──────────────────    ─────────  ───────
+        //    1    Start                 14,520       387   ← expression is primary
+        //   14    Switch                23,001       485   ← expression is primary
+        //   21    Break                    280        22   ← expression is primary
+        //   40    Variable Definition   13,772         0   ← expression only
+        //   41    Variable Assignment    3,171         0   ← expression only
+        //   43    Fact Condition           111         0   ← expression only
+        //
+        // FIELD_VALUE carries EXPRESSION.FORMULA for full expression context.
+        // TASK_TYPE is projected so callers can identify which task type matched.
+        String sqlExpr = """
+                SELECT DISTINCT
+                    wf.WF_NAME,
+                    wf.BO_TYPE_NAME,
+                    wf.BO_EVENT_NAME,
+                    t.TASK_LABEL,
+                    t.TASK_TYPE,
+                    NULL                        AS MAP_TYPE,
+                    e.FORMULA                   AS FIELD_VALUE,
+                    'EXPR'                      AS DIRECTION,
+                    sf.ATR_NAME                 AS TARGETFIELDNAME,
+                    sf.ATR_FIELD_LABEL          AS TARGETFIELDLABEL,
+                    sf.SECTION_LABEL            AS TARGETSECTIONLABEL,
+                    NULL                        AS SOURCEFIELDNAME,
+                    NULL                        AS SOURCEFIELDLABEL
+                FROM WF_TEMPLATE wf
+                JOIN TASK t
+                    ON  t.WF_TEMPLATE_ID = wf.WF_TEMPLATE_ID
+                    AND t.VERSION        = wf.WF_TEMPLATE_VERSION
+                JOIN EXPRESSION e
+                    ON  e.ID = t.MAP_ID
+                JOIN EXPRESSION_PARAM ep
+                    ON  ep.FORMULA_ID = e.ID
+                JOIN SOBJTYPE_FIELDS sf
+                    ON  ep.PARAM_STR LIKE '%fieldName=''' || sf.ATR_NAME || '''%'
+                WHERE wf.STATUS_ID = 10
+                  AND t.TASK_TYPE  IN (1, 14, 21, 40, 41, 43)
+                  AND ep.PARAM_STR LIKE '%type=''field''%'
+                  AND (
+                        UPPER(sf.ATR_NAME)        LIKE UPPER\s"""
+                + "(" + p + ") "
+                + "OR UPPER(sf.ATR_FIELD_LABEL) LIKE UPPER"
+                + "(" + p + ") "
+                + ")";
+
+        // ── Query 4: FORMULA — field is an input parameter in a MAP_TYPE 80 row ─
+        //
+        // MAP_TYPE 80 is a computed/formula mapping.  FIELD_VALUE contains the
+        // formula expression (e.g. "A+\" space\"" or "BUILDING+\" - \"+FLOOR").
+        // The placeholder letters (A, B, FLOOR, …) are bound to source fields via
+        // SOBJTYPE_FORMULA_PARAMS, NOT via a direct ATR_SEQ in OBJECT_TYPE_MAP.
+        //
+        // Join chain:
+        //   OBJECT_TYPE_MAP (MAP_TYPE=80)
+        //     → SOBJTYPE_FORMULA_HDR    (OTM.SRC_MEMBER_ID = h.FORMULA_ID)
+        //     → SOBJTYPE_FORMULA_PARAMS (matching FORMULA_ID / SPEC_TEMPLATE_ID /
+        //                                ATR_SEQ; PARAM_TYPE='I'; PARAM_FLD_QRY_FLG='F')
+        //     → SOBJTYPE_FIELDS         (OTM.SRC_OBJECT_TYPE_ID + ATR_NAME extracted
+        //                                from PARAM_DISP_STR after the colon)
+        //
+        // Key facts verified against live data:
+        //   • SOBJTYPE_FORMULA_HDR.SPEC_TEMPLATE_ID = −WF_TEMPLATE_ID (negative,
+        //     a workflow-instance marker).  It is NOT a valid SOBJTYPE_FIELDS key.
+        //     Always use OTM.SRC_OBJECT_TYPE_ID for the SOBJTYPE_FIELDS join.
+        //   • PARAM_DISP_STR format: "SectionName:FieldTechnicalName"
+        //     SUBSTR(..., INSTR(..., ':') + 1) reliably extracts the ATR_NAME.
+        //   • PARAM_TYPE='I' = input/source parameter (field reference).
+        //     PARAM_TYPE='O' = output parameter (target field via PARAM_ATR_SEQ).
+        //     Only 'I' with PARAM_FLD_QRY_FLG='F' are direct field references.
+        //   • PARAM_ATR_SEQ is always 0 for PARAM_TYPE='I' — do not use it.
+        //
+        // FIELD_VALUE is set to "<formula> | param: <PARAM_DISP_STR>" so callers
+        // can see both what the formula computes and which param slot the matched
+        // field occupies (e.g. "BUILDING+\" - \"+FLOOR | param: RecordInformation:triParentFloorTX").
+        //
+        // DISTINCT collapses duplicates that arise when the same field appears as
+        // multiple params in one formula (e.g. A and C both bound to the same field).
+        String sqlFormula = """
+                SELECT DISTINCT
+                    wf.WF_NAME,
+                    wf.BO_TYPE_NAME,
+                    wf.BO_EVENT_NAME,
+                    t.TASK_LABEL,
+                    t.TASK_TYPE,
+                    otm.MAP_TYPE,
+                    otm.FIELD_VALUE || ' | param: ' || p.PARAM_DISP_STR AS FIELD_VALUE,
+                    'FORMULA'                   AS DIRECTION,
+                    sf_param.ATR_NAME           AS TARGETFIELDNAME,
+                    sf_param.ATR_FIELD_LABEL    AS TARGETFIELDLABEL,
+                    sf_param.SECTION_LABEL      AS TARGETSECTIONLABEL,
+                    NULL                        AS SOURCEFIELDNAME,
+                    NULL                        AS SOURCEFIELDLABEL
+                FROM OBJECT_TYPE_MAP otm
+                JOIN SOBJTYPE_FORMULA_HDR h
+                    ON  h.FORMULA_ID = otm.SRC_MEMBER_ID
+                JOIN SOBJTYPE_FORMULA_PARAMS p
+                    ON  p.FORMULA_ID       = h.FORMULA_ID
+                    AND p.SPEC_TEMPLATE_ID = h.SPEC_TEMPLATE_ID
+                    AND p.ATR_SEQ          = h.ATR_SEQ
+                    AND p.PARAM_TYPE       = 'I'
+                    AND p.PARAM_FLD_QRY_FLG = 'F'
+                JOIN SOBJTYPE_FIELDS sf_param
+                    ON  sf_param.SPEC_TEMPLATE_ID = otm.SRC_OBJECT_TYPE_ID
+                    AND sf_param.ATR_NAME =
+                        SUBSTR(p.PARAM_DISP_STR, INSTR(p.PARAM_DISP_STR, ':') + 1)
+                JOIN TASK t
+                    ON  t.MAP_ID         = otm.MAP_ID
+                    AND t.WF_TEMPLATE_ID = otm.WF_TEMPLATE_ID
+                    AND t.VERSION        = otm.WF_TEMPLATE_VERSION
+                JOIN WF_TEMPLATE wf
+                    ON  wf.WF_TEMPLATE_ID      = t.WF_TEMPLATE_ID
+                    AND wf.WF_TEMPLATE_VERSION = t.VERSION
+                LEFT JOIN SOBJTYPE_FIELDS sf_target
+                    ON  sf_target.SPEC_TEMPLATE_ID = otm.TARGET_OBJECT_TYPE_ID
+                    AND sf_target.ATR_SEQ          = otm.TARGET_MEMBER_ID
+                WHERE otm.MAP_TYPE  = 80
+                  AND wf.STATUS_ID  = 10
+                  AND (
+                        UPPER(sf_param.ATR_NAME)        LIKE UPPER\s"""
+                + "(" + p + ") "
+                + "OR UPPER(sf_param.ATR_FIELD_LABEL) LIKE UPPER"
+                + "(" + p + ") "
+                + ")";
+
+        // ── Execute all four and merge ────────────────────────────────────────
+        List<FieldReferenceResult> targetRows = databaseService
+                .runSimpleQuery("mcp-run-simple-query", sqlTarget, null)
+                .stream()
+                .map(FieldReferenceResult::from)
+                .collect(Collectors.toList());
+
+        List<FieldReferenceResult> sourceRows = databaseService
+                .runSimpleQuery("mcp-run-simple-query", sqlSource, null)
+                .stream()
+                .map(FieldReferenceResult::from)
+                .collect(Collectors.toList());
+
+        List<FieldReferenceResult> exprRows = databaseService
+                .runSimpleQuery("mcp-run-simple-query", sqlExpr, null)
+                .stream()
+                .map(FieldReferenceResult::from)
+                .collect(Collectors.toList());
+
+        List<FieldReferenceResult> formulaRows = databaseService
+                .runSimpleQuery("mcp-run-simple-query", sqlFormula, null)
+                .stream()
+                .map(FieldReferenceResult::from)
+                .collect(Collectors.toList());
+
+        // Deduplicate on (wfName, taskLabel, direction, targetFieldName, sourceFieldName).
+        // Duplicates can arise when:
+        //   • A field has multiple SOBJTYPE_FIELDS rows (same ATR_NAME, diff ATR_SEQ)
+        //   • An EXPR param XML matches both the ATR_NAME and ATR_FIELD_LABEL branches
+        //   • A FORMULA param appears in multiple PARAM rows for the same formula
+        return Stream.of(targetRows, sourceRows, exprRows, formulaRows)
+                .flatMap(List::stream)
+                .distinct()
+                .sorted(Comparator
+                        .comparing(FieldReferenceResult::getWorkflowName,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(FieldReferenceResult::getTaskLabel,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(FieldReferenceResult::getDirection,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
     }
 }
